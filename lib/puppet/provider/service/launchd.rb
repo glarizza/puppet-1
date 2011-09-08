@@ -56,7 +56,7 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
   Launchd_Overrides = "/var/db/launchd.db/com.apple.launchd/overrides.plist"
   
   def has_macosx_plist_overrides?
-    product_version = :sw_vers "-productVersion"
+    product_version = sw_vers "-productVersion"
     return true unless /^10\.[0-5]/.match(product_version)
     return false
   end
