@@ -108,33 +108,52 @@ describe 'DirectoryService password behavior' do
   # The below is a salted-SHA512 password hash in hex.
   let (:sha512_hash) { 'dd067bfc346740ff7a84d20dda7411d80a03a64b93ee1c2150b1c5741de6ea7086036ea74d4d41c8c15a3cf6a6130e315733e0ef00cf5409c1c92b84a64c37bef8d02aa5' }
 
+  let :plist_path do
+    '/var/db/dslocal/nodes/Default/users/jeff.plist'
+  end
+
+  let :ds_provider do
+    Puppet::Provider::NameService::DirectoryService
+  end
+
+  let :shadow_hash_data do
+    {'ShadowHashData' => [StringIO.new(binary_plist)]}
+  end
+
+  subject do
+    Puppet::Provider::NameService::DirectoryService
+  end
+
+  before :each do
+    subject.expects(:get_macosx_version_major).returns("10.7")
+  end
+
   it 'should execute convert_binary_to_xml once when getting the password on >= 10.7' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.7")
-    Puppet::Provider::NameService::DirectoryService.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
-    File.stubs(:exists?).returns(true)
-    Puppet::Provider::NameService::DirectoryService.stubs(:plutil)
-    Plist.stubs(:parse_xml).returns({'ShadowHashData' => [StringIO.new(binary_plist)]})
-    Puppet::Provider::NameService::DirectoryService.get_password('uid', 'jeff')
+    subject.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
+    File.expects(:exists?).with(plist_path).once.returns(true)
+    Plist.expects(:parse_xml).returns(shadow_hash_data)
+    # On Mac OS X 10.7 we first need to convert to xml when reading the password
+    subject.expects(:plutil).with('-convert', 'xml1', '-o', '/dev/stdout', plist_path)
+    subject.get_password('uid', 'jeff')
   end
 
   it 'should fail if a salted-SHA512 password hash is not passed in >= 10.7' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.7")
-    File.stubs(:exists?).returns(true)
-    Plist.stubs(:parse_xml).returns({'ShadowHashData' => [StringIO.new(binary_plist)]})
     expect {
-      Puppet::Provider::NameService::DirectoryService.set_password('jeff', 'uid', 'badpassword')
+      subject.set_password('jeff', 'uid', 'badpassword')
     }.should raise_error(RuntimeError, /OS X 10.7 requires a Salted SHA512 hash password of 136 characters./)
   end
 
   it 'should convert xml-to-binary and binary-to-xml when setting the pw on >= 10.7' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.7")
-    Puppet::Provider::NameService::DirectoryService.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
-    Puppet::Provider::NameService::DirectoryService.expects(:convert_xml_to_binary).returns(binary_plist)
-    Puppet::Provider::NameService::DirectoryService.stubs(:plutil)
-    File.stubs(:exists?).returns(true)
-    Plist.stubs(:parse_xml).returns({'ShadowHashData' => [StringIO.new(binary_plist)]})
-    Plist::Emit.stubs(:save_plist)
-    Puppet::Provider::NameService::DirectoryService.set_password('jeff', 'uid', sha512_hash)
+    subject.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
+    subject.expects(:convert_xml_to_binary).returns(binary_plist)
+    File.expects(:exists?).with(plist_path).once.returns(true)
+    Plist.expects(:parse_xml).returns(shadow_hash_data)
+    # On Mac OS X 10.7 we first need to convert to xml
+    subject.expects(:plutil).with('-convert', 'xml1', '-o', '/dev/stdout', plist_path)
+    # And again back to a binary plist or DirectoryService will complain
+    subject.expects(:plutil).with('-convert', 'binary1', plist_path)
+    Plist::Emit.expects(:save_plist).with(shadow_hash_data, plist_path)
+    subject.set_password('jeff', 'uid', sha512_hash)
   end
 end
 
