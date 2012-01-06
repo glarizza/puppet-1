@@ -112,6 +112,7 @@ describe 'DirectoryService password behavior' do
     Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.7")
     Puppet::Provider::NameService::DirectoryService.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
     File.stubs(:exists?).returns(true)
+    Puppet::Provider::NameService::DirectoryService.stubs(:plutil)
     Plist.stubs(:parse_xml).returns({'ShadowHashData' => [StringIO.new(binary_plist)]})
     Puppet::Provider::NameService::DirectoryService.get_password('uid', 'jeff')
   end
@@ -129,6 +130,7 @@ describe 'DirectoryService password behavior' do
     Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.7")
     Puppet::Provider::NameService::DirectoryService.expects(:convert_binary_to_xml).returns({'SALTED-SHA512' => StringIO.new(pw_string)})
     Puppet::Provider::NameService::DirectoryService.expects(:convert_xml_to_binary).returns(binary_plist)
+    Puppet::Provider::NameService::DirectoryService.stubs(:plutil)
     File.stubs(:exists?).returns(true)
     Plist.stubs(:parse_xml).returns({'ShadowHashData' => [StringIO.new(binary_plist)]})
     Plist::Emit.stubs(:save_plist)
