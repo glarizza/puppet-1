@@ -21,6 +21,7 @@ class DirectoryService < Puppet::Provider::NameService
   commands :dscl => "/usr/bin/dscl"
   commands :dseditgroup => "/usr/sbin/dseditgroup"
   commands :sw_vers => "/usr/bin/sw_vers"
+  commands :plutil => '/usr/bin/plutil'
   confine :operatingsystem => :darwin
   defaultfor :operatingsystem => :darwin
 
@@ -317,8 +318,8 @@ class DirectoryService < Puppet::Provider::NameService
         # we will need to extract the binary plist from the 'ShadowHashData'
         # key, log the new password into the resultant plist's 'SALTED-SHA512'
         # key, and then save the entire structure back.
-        users_plist = Plist::parse_xml(`plutil -convert xml1 -o /dev/stdout  \
-                                       #{@@users_plist_dir}/#{resource_name}.plist`)
+        users_plist = Plist::parse_xml(plutil( '-convert', 'xml1', '-o', '/dev/stdout', \
+                                       "#{@@users_plist_dir}/#{resource_name}.plist"))
 
         # users_plist['ShadowHashData'][0].string is actually a binary plist
         # that's nested INSIDE the user's plist (which itself is a binary
@@ -339,7 +340,7 @@ class DirectoryService < Puppet::Provider::NameService
         changed_plist = convert_xml_to_binary(converted_hash_plist)
         users_plist['ShadowHashData'][0].string = changed_plist
         Plist::Emit.save_plist(users_plist, "#{@@users_plist_dir}/#{resource_name}.plist")
-        %x{plutil -convert binary1 #{@@users_plist_dir}/#{resource_name}.plist}
+        plutil('-convert', 'binary1', "#{@@users_plist_dir}/#{resource_name}.plist")
       end
     end
   end
@@ -363,7 +364,7 @@ class DirectoryService < Puppet::Provider::NameService
         # If a plist exists in /var/db/dslocal/nodes/Default/users, we will
         # extract the binary plist from the 'ShadowHashData' key, decode the
         # salted-SHA512 password hash, and then return it.
-        users_plist = Plist::parse_xml(`plutil -convert xml1 -o /dev/stdout #{@@users_plist_dir}/#{username}.plist`)
+        users_plist = Plist::parse_xml(plutil('-convert', 'xml1', '-o', '/dev/stdout', "#{@@users_plist_dir}/#{username}.plist"))
         if users_plist['ShadowHashData']
           # users_plist['ShadowHashData'][0].string is actually a binary plist
           # that's nested INSIDE the user's plist (which itself is a binary
@@ -635,3 +636,4 @@ class DirectoryService < Puppet::Provider::NameService
   end
 end
 end
+
