@@ -99,9 +99,11 @@ def build_dmg
 
   if File.directory?("#{Pathname.pwd}/pkg/apple")
     FileUtils.mv("#{Pathname.pwd}/#{dmg_file}", "#{Pathname.pwd}/pkg/apple/#{dmg_file}")
+    puts "moved:   #{dmg_file} has been moved to #{Pathname.pwd}/pkg/apple/#{dmg_file}"
   else
     FileUtils.mkdir_p("#{Pathname.pwd}/pkg/apple")
     FileUtils.mv(dmg_file, "#{Pathname.pwd}/pkg/apple/#{dmg_file}")
+    puts "moved:   #{dmg_file} has been moved to #{Pathname.pwd}/pkg/apple/#{dmg_file}"
   end
 end
 
