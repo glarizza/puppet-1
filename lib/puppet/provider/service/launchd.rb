@@ -1,4 +1,4 @@
-require 'facter/util/plist'
+require 'puppet/util/cfpropertylist'
 Puppet::Type.type(:service).provide :launchd, :parent => :base do
   desc <<-EOT
     This provider manages jobs with `launchd`, which is the default service
@@ -56,8 +56,10 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
                     "/System/Library/LaunchAgents",
                     "/System/Library/LaunchDaemons"]
 
-  Launchd_Overrides = "/var/db/launchd.db/com.apple.launchd/overrides.plist"
-  
+  Launchd_Overrides  = "/var/db/launchd.db/com.apple.launchd/overrides.plist"
+  Binary_Plist_Magic = "bplist00" # Magic number for binary Plist, with 00 version number.
+  Plist_Xml_Doctype  = '<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+
   # Caching is enabled through the following three methods. Self.prefetch will
   # call self.instances to create an instance for each service. Self.flush will
   # clear out our cache when we're done.
@@ -91,6 +93,7 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
       Launchd_Paths.each do |path|
         Dir.glob(File.join(path,'*')).each do |filepath|
           next if ! File.file?(filepath)
+          puts filepath
           job = read_plist(filepath)
           if job.has_key?("Label") and job["Label"] == label
             return { label => filepath }
@@ -143,7 +146,21 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
   # Read a plist, whether its format is XML or in Apple's "binary1"
   # format.
   def self.read_plist(path)
-    Plist::parse_xml(plutil('-convert', 'xml1', '-o', '/dev/stdout', path))
+    bad_xml_doctype = /^.*<!DOCTYPE plist PUBLIC -\/\/Apple Computer.*$/
+    # We can't really read the file until we know the source encoding in
+    # Ruby 1.9.x, so we use the magic number to detect it.
+    # NOTE: We need to use IO.read to be Ruby 1.8.x compatible.
+    if IO.read(path, Binary_Plist_Magic.length) == Binary_Plist_Magic
+      plist_obj = CFPropertyList::List.new(:file => path)
+    else
+      plist_data = File.open(path, "r:UTF-8").read
+      if plist_data =~ bad_xml_doctype
+        plist_data.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
+        debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+      end
+      plist_obj = CFPropertyList::List.new(:data => plist_data)
+    end
+    plist_data = CFPropertyList.native_types(plist_obj.value)
   end
 
   # Clean out the @property_hash variable containing the cached list of services
@@ -278,12 +295,16 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     if has_macosx_plist_overrides?
       overrides = self.class.read_plist(Launchd_Overrides)
       overrides[resource[:name]] = { "Disabled" => false }
-      Plist::Emit.save_plist(overrides, Launchd_Overrides)
+      overrides_plist       = CFPropertyList::List.new
+      overrides_plist.value = CFPropertyList.guess(overrides)
+      overrides_plist.save(Launchd_Overrides, CFPropertyList::List::FORMAT_XML)
     else
       job_path, job_plist = plist_from_label(resource[:name])
       if self.enabled? == :false
         job_plist.delete("Disabled")
-        Plist::Emit.save_plist(job_plist, job_path)
+        job_plist_file       = CFPropertyList::List.new
+        job_plist_file.value = CFPropertyList.guess(job_plist)
+        job_plist_file.save(job_path, CFPropertyList::List::FORMAT_XML)
       end
     end
   end
@@ -293,11 +314,15 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     if has_macosx_plist_overrides?
       overrides = self.class.read_plist(Launchd_Overrides)
       overrides[resource[:name]] = { "Disabled" => true }
-      Plist::Emit.save_plist(overrides, Launchd_Overrides)
+      overrides_plist       = CFPropertyList::List.new
+      overrides_plist.value = CFPropertyList.guess(overrides)
+      overrides_plist.save(Launchd_Overrides, CFPropertyList::List::FORMAT_XML)
     else
       job_path, job_plist = plist_from_label(resource[:name])
       job_plist["Disabled"] = true
-      Plist::Emit.save_plist(job_plist, job_path)
+      job_plist_file       = CFPropertyList::List.new
+      job_plist_file.value = CFPropertyList.guess(job_plist)
+      job_plist_file.save(job_path, CFPropertyList::List::FORMAT_XML)
     end
   end
 
