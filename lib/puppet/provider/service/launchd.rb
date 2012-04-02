@@ -93,8 +93,20 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
       Launchd_Paths.each do |path|
         Dir.glob(File.join(path,'*')).each do |filepath|
           next if ! File.file?(filepath)
-          puts filepath
-          job = read_plist(filepath)
+
+          # Frequently you will encounter improperly parsed XML (such as
+          # /System/Library/LaunchDaemons/org.cups.cupsd.plist that uses
+          # a double-hyphen inside a comment which is against the spec)
+          # that causes CFPropertyList to error out. This is a scenario
+          # we cannot repair, and so we output a debug error and skip the
+          # file.
+          begin
+            job = read_plist(filepath)
+          rescue => e
+           debug("Had to skip #{filepath} due to improperly parsed XML")
+           next
+          end
+
           if job.has_key?("Label") and job["Label"] == label
             return { label => filepath }
           else
