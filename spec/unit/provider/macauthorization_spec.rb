@@ -5,9 +5,6 @@
 
 require 'spec_helper'
 
-require 'puppet'
-require 'facter/util/plist'
-
 provider_class = Puppet::Type.type(:macauthorization).provider(:macauthorization)
 
 describe provider_class do
@@ -24,9 +21,6 @@ describe provider_class do
     authdb = {}
     authdb["rules"] = { "foorule" => "foo" }
     authdb["rights"] = { "fooright" => "foo" }
-
-    # Stub out Plist::parse_xml
-    Plist.stubs(:parse_xml).returns(authdb)
 
     # A catch all; no parameters set
     @resource.stubs(:[]).returns(nil)
@@ -106,28 +100,30 @@ describe provider_class do
     end
 
     it "should call the internal method set_right" do
-      @provider.expects(:execute).with { |cmds, args|
+      Puppet::Util::Execution.expects(:execute).with { |cmds, args|
         cmds.include?("read") and
         cmds.include?(@authname) and
         args[:combine] == false
       }.once
       @provider.expects(:set_right)
+      @provider.expects(:read_plist)
       @provider.flush
     end
 
     it "should read and write to the auth database with the right arguments" do
-      @provider.expects(:execute).with { |cmds, args|
+      Puppet::Util::Execution.expects(:execute).with { |cmds, args|
         cmds.include?("read") and
         cmds.include?(@authname) and
         args[:combine] == false
       }.once
 
-      @provider.expects(:execute).with { |cmds, args|
+      Puppet::Util::Execution.expects(:execute).with { |cmds, args|
         cmds.include?("write") and
         cmds.include?(@authname) and
         args[:combine] == false and
         args[:stdinfile] != nil
       }.once
+      @provider.expects(:read_plist)
       @provider.flush
     end
 
@@ -145,6 +141,7 @@ describe provider_class do
 
     it "should call the internal method set_rule" do
       @provider.expects(:set_rule)
+      @provider.expects(:read_plist).returns({'rules' => 'foo'})
       @provider.flush
     end
   end
