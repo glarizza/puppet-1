@@ -1,7 +1,10 @@
 require 'puppet'
 require 'puppet/provider/nameservice'
-require 'facter/util/plist'
+require 'puppet/util/cfpropertylist'
 require 'fileutils'
+
+Plist_Xml_Doctype  = '<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+Binary_Plist_Magic = "bplist00" # Magic number for binary Plist, with 00 version number.
 
 class Puppet::Provider::NameService
 class DirectoryService < Puppet::Provider::NameService
@@ -123,7 +126,32 @@ class DirectoryService < Puppet::Provider::NameService
   end
 
   def self.parse_dscl_plist_data(dscl_output)
-    Plist.parse_xml(dscl_output)
+    bad_xml_doctype = /^.*<!DOCTYPE plist PUBLIC -\/\/Apple Computer.*$/
+    if dscl_output =~ bad_xml_doctype
+      dscl_output.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
+      debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+    end
+    plist = CFPropertyList::List.new
+    plist.load_str(dscl_output)
+    CFPropertyList.native_types(plist.value)
+  end
+
+  def self.read_plist(path)
+    bad_xml_doctype = /^.*<!DOCTYPE plist PUBLIC -\/\/Apple Computer.*$/
+    # We can't really read the file until we know the source encoding in
+    # Ruby 1.9.x, so we use the magic number to detect it.
+    # NOTE: We need to use IO.read to be Ruby 1.8.x compatible.
+    if IO.read(path, Binary_Plist_Magic.length) == Binary_Plist_Magic
+      plist_obj = CFPropertyList::List.new(:file => path)
+    else
+      plist_data = File.open(path, "r:UTF-8").read
+      if plist_data =~ bad_xml_doctype
+        plist_data.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
+        debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+      end
+      plist_obj = CFPropertyList::List.new(:data => plist_data)
+    end
+    CFPropertyList.native_types(plist_obj.value)
   end
 
   def self.generate_attribute_hash(input_hash, *type_properties)
@@ -217,6 +245,8 @@ class DirectoryService < Puppet::Provider::NameService
   end
 
   def self.set_password(resource_name, guid, password_hash)
+    @plist_path = File.join(users_plist_dir, "#{resource_name}.plist")
+
     # Use Puppet::Util::Package.versioncmp() to catch the scenario where a
     # version '10.10' would be < '10.7' with simple string comparison. This
     # if-statement only executes if the current version is less-than 10.7
@@ -259,39 +289,43 @@ class DirectoryService < Puppet::Provider::NameService
              Please check your password and try again.")
       end
 
-      if File.exists?("#{users_plist_dir}/#{resource_name}.plist")
+      if File.exists?(@plist_path)
         # If a plist already exists in /var/db/dslocal/nodes/Default/users, then
         # we will need to extract the binary plist from the 'ShadowHashData'
         # key, log the new password into the resultant plist's 'SALTED-SHA512'
         # key, and then save the entire structure back.
-        users_plist = Plist::parse_xml(plutil( '-convert', 'xml1', '-o', '/dev/stdout', \
-                                       "#{users_plist_dir}/#{resource_name}.plist"))
+        users_plist = read_plist(@plist_path)
 
         # users_plist['ShadowHashData'][0].string is actually a binary plist
         # that's nested INSIDE the user's plist (which itself is a binary
         # plist).
-        password_hash_plist = users_plist['ShadowHashData'][0].string
-        converted_hash_plist = convert_binary_to_xml(password_hash_plist)
+        password_hash_plist = parse_dscl_plist_data(users_plist['ShadowHashData'][0])
 
         # converted_hash_plist['SALTED-SHA512'].string expects a Base64 encoded
         # string. The password_hash provided as a resource attribute is a
         # hex value. We need to convert the provided hex value to a Base64
         # encoded string to nest it in the converted hash plist.
-        converted_hash_plist['SALTED-SHA512'].string = \
+        password_hash_plist['SALTED-SHA512'] = \
           password_hash.unpack('a2'*(password_hash.size/2)).collect { |i| i.hex.chr }.join
 
         # Finally, we can convert the nested plist back to binary, embed it
         # into the user's plist, and convert the resultant plist back to
         # a binary plist.
-        changed_plist = convert_xml_to_binary(converted_hash_plist)
-        users_plist['ShadowHashData'][0].string = changed_plist
-        Plist::Emit.save_plist(users_plist, "#{users_plist_dir}/#{resource_name}.plist")
-        plutil('-convert', 'binary1', "#{users_plist_dir}/#{resource_name}.plist")
+        binary_password_hash_plist       = CFPropertyList::List.new
+        binary_password_hash_plist.value = CFPropertyList.guess(password_hash_plist)
+        # The below blows up because Iconv.conv causes an Iconv::IllegalSequence
+        # error saying: "Iconv::IllegalSequence: "\214\351\005 \250\224\204\2510M\231\004\312YH\336"..."
+        users_plist['ShadowHashData'][0] = binary_password_hash_plist.to_s
+        users_plist_file       = CFPropertyList::List.new
+        users_plist_file.value = CFPropertyList.guess(users_plist)
+        users_plist_file.save(@plist_path, CFPropertyList::List::FORMAT_BINARY)
       end
     end
   end
 
   def self.get_password(guid, username)
+    @plist_path = File.join(users_plist_dir, "#{username}.plist")
+
     # Use Puppet::Util::Package.versioncmp() to catch the scenario where a
     # version '10.10' would be < '10.7' with simple string comparison. This
     # if-statement only executes if the current version is less-than 10.7 
@@ -306,55 +340,26 @@ class DirectoryService < Puppet::Provider::NameService
       end
       password_hash
     else
-      if File.exists?("#{users_plist_dir}/#{username}.plist")
+      if File.exists?(@plist_path)
         # If a plist exists in /var/db/dslocal/nodes/Default/users, we will
         # extract the binary plist from the 'ShadowHashData' key, decode the
         # salted-SHA512 password hash, and then return it.
-        users_plist = Plist::parse_xml(plutil('-convert', 'xml1', '-o', '/dev/stdout', "#{users_plist_dir}/#{username}.plist"))
+        users_plist = read_plist(@plist_path)
         if users_plist['ShadowHashData']
           # users_plist['ShadowHashData'][0].string is actually a binary plist
           # that's nested INSIDE the user's plist (which itself is a binary
           # plist).
-          password_hash_plist = users_plist['ShadowHashData'][0].string
-          converted_hash_plist = convert_binary_to_xml(password_hash_plist)
+          password_hash_plist = parse_dscl_plist_data(users_plist['ShadowHashData'][0])
 
           # converted_hash_plist['SALTED-SHA512'].string is a Base64 encoded
           # string. The password_hash provided as a resource attribute is a
           # hex value. We need to convert the Base64 encoded string to a
           # hex value and provide it back to Puppet.
-          password_hash = converted_hash_plist['SALTED-SHA512'].string.unpack("H*")[0]
+          password_hash = password_hash_plist['SALTED-SHA512'].unpack("H*")[0]
           password_hash
         end
       end
     end
-  end
-
-  # This method will accept a hash that has been returned from Plist::parse_xml
-  # and convert it to a binary plist (string value).
-  def self.convert_xml_to_binary(plist_data)
-    Puppet.debug('Converting XML plist to binary')
-    Puppet.debug('Executing: \'plutil -convert binary1 -o - -\'')
-    IO.popen('plutil -convert binary1 -o - -', mode='r+') do |io|
-      io.write plist_data.to_plist
-      io.close_write
-      @converted_plist = io.read
-    end
-    @converted_plist
-  end
-
-  # This method will accept a binary plist (as a string) and convert it to a
-  # hash via Plist::parse_xml.
-  def self.convert_binary_to_xml(plist_data)
-    Puppet.debug('Converting binary plist to XML')
-    Puppet.debug('Executing: \'plutil -convert xml1 -o - -\'')
-    IO.popen('plutil -convert xml1 -o - -', mode='r+') do |io|
-      io.write plist_data
-      io.close_write
-      @converted_plist = io.read
-    end
-    Puppet.debug('Converting XML values to a hash.')
-    @plist_hash = Plist::parse_xml(@converted_plist)
-    @plist_hash
   end
 
   # Unlike most other *nixes, OS X doesn't provide built in functionality
@@ -410,7 +415,9 @@ class DirectoryService < Puppet::Provider::NameService
     exec_arg_vector << ns_to_ds_attribute_map[:guid]
     begin
       guid_output = execute(exec_arg_vector)
-      guid_plist = Plist.parse_xml(guid_output)
+      plist = CFPropertyList::List.new
+      plist.load_str(guid_output)
+      guid_plist = CFPropertyList.native_types(plist.value)
       # Although GeneratedUID like all DirectoryService values can be multi-valued
       # according to the schema, in practice user accounts cannot have multiple UUIDs
       # otherwise Bad Things Happen, so we just deal with the first value.
