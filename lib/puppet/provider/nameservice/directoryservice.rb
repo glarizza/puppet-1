@@ -118,7 +118,7 @@ class DirectoryService < Puppet::Provider::NameService
   def self.list_all_present
     # JJM: List all objects of this Puppet::Type already present on the system.
     begin
-      dscl_output = execute(get_exec_preamble("-list"))
+      dscl_output = Puppet::Util::Execution.execute(get_exec_preamble("-list"))
     rescue Puppet::ExecutionFailure => detail
       fail("Could not get #{@resource_type.name} list from DirectoryService")
     end
@@ -201,7 +201,7 @@ class DirectoryService < Puppet::Provider::NameService
 
     dscl_vector = get_exec_preamble("-read", resource_name)
     begin
-      dscl_output = execute(dscl_vector)
+      dscl_output = Puppet::Util::Execution.execute(dscl_vector)
     rescue Puppet::ExecutionFailure => detail
       fail("Could not get report.  command execution failed.")
     end
@@ -304,20 +304,22 @@ class DirectoryService < Puppet::Provider::NameService
         # converted_hash_plist['SALTED-SHA512'].string expects a Base64 encoded
         # string. The password_hash provided as a resource attribute is a
         # hex value. We need to convert the provided hex value to a Base64
-        # encoded string to nest it in the converted hash plist.
+        # encoded string to nest it in the converted hash plist. We're also
+        # setting blob = true so it treats it as binary data in the upcoming
+        # conversion.
         password_hash_plist['SALTED-SHA512'] = \
           password_hash.unpack('a2'*(password_hash.size/2)).collect { |i| i.hex.chr }.join
+        password_hash_plist['SALTED-SHA512'].blob = true
 
         # Finally, we can convert the nested plist back to binary, embed it
         # into the user's plist, and convert the resultant plist back to
         # a binary plist.
-        binary_password_hash_plist       = CFPropertyList::List.new
-        binary_password_hash_plist.value = CFPropertyList.guess(password_hash_plist)
-        # The below blows up because Iconv.conv causes an Iconv::IllegalSequence
-        # error saying: "Iconv::IllegalSequence: "\214\351\005 \250\224\204\2510M\231\004\312YH\336"..."
-        users_plist['ShadowHashData'][0] = binary_password_hash_plist.to_s
-        users_plist_file       = CFPropertyList::List.new
-        users_plist_file.value = CFPropertyList.guess(users_plist)
+        binary_password_hash_plist            = CFPropertyList::List.new
+        binary_password_hash_plist.value      = CFPropertyList.guess(password_hash_plist)
+        users_plist['ShadowHashData'][0]      = binary_password_hash_plist.to_str
+        users_plist['ShadowHashData'][0].blob = true
+        users_plist_file                      = CFPropertyList::List.new
+        users_plist_file.value                = CFPropertyList.guess(users_plist)
         users_plist_file.save(@plist_path, CFPropertyList::List::FORMAT_BINARY)
       end
     end
@@ -414,7 +416,7 @@ class DirectoryService < Puppet::Provider::NameService
     exec_arg_vector = self.class.get_exec_preamble("-read", @resource.name)
     exec_arg_vector << ns_to_ds_attribute_map[:guid]
     begin
-      guid_output = execute(exec_arg_vector)
+      guid_output = Puppet::Util::Execution.execute(exec_arg_vector)
       plist = CFPropertyList::List.new
       plist.load_str(guid_output)
       guid_plist = CFPropertyList.native_types(plist.value)
