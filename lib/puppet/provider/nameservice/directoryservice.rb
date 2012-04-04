@@ -129,7 +129,7 @@ class DirectoryService < Puppet::Provider::NameService
     bad_xml_doctype = /^.*<!DOCTYPE plist PUBLIC -\/\/Apple Computer.*$/
     if dscl_output =~ bad_xml_doctype
       dscl_output.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
-      debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+      Puppet.debug("Had to fix plist with incorrect DOCTYPE declaration")
     end
     plist = CFPropertyList::List.new
     plist.load_str(dscl_output)
@@ -147,7 +147,7 @@ class DirectoryService < Puppet::Provider::NameService
       plist_data = File.open(path, "r:UTF-8").read
       if plist_data =~ bad_xml_doctype
         plist_data.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
-        debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+        Puppet.debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
       end
       plist_obj = CFPropertyList::List.new(:data => plist_data)
     end
