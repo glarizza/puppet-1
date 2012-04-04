@@ -9,6 +9,7 @@ describe Puppet::Type.type(:service).provider(:launchd) do
   let (:launchd_overrides) { '/var/db/launchd.db/com.apple.launchd/overrides.plist' }
   let(:resource) { Puppet::Type.type(:service).new(:name => joblabel) }
   subject { Puppet::Type.type(:service).provider(:launchd).new(resource) }
+  let(:launchd_overrides) { '/var/db/launchd.db/com.apple.launchd/overrides.plist' }
 
   describe "the type interface" do
     %w{ start stop enabled? enable disable status}.each do |method|
@@ -188,7 +189,9 @@ describe Puppet::Type.type(:service).provider(:launchd) do
       resource[:enable] = true
       provider.expects(:get_macosx_version_major).returns("10.6")
       provider.expects(:read_plist).returns({})
-      Plist::Emit.expects(:save_plist).once
+      provider.expects(:save_plist).with(launchd_overrides, \
+                                         {'com.foo.food' => {'Disabled' => false}}, \
+                                         2)
       subject.enable
     end
   end
@@ -197,8 +200,10 @@ describe Puppet::Type.type(:service).provider(:launchd) do
     it "should write to the global launchd overrides file once" do
       resource[:enable] = false
       provider.stubs(:get_macosx_version_major).returns("10.6")
-      provider.stubs(:read_plist).returns({})
-      Plist::Emit.expects(:save_plist).once
+      provider.expects(:read_plist).with(launchd_overrides).returns({})
+      provider.expects(:save_plist).with(launchd_overrides, \
+                                         {'com.foo.food' => {'Disabled' => false}}, \
+                                         2)
       subject.enable
     end
   end

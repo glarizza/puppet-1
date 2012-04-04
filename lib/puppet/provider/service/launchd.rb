@@ -175,6 +175,16 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     plist_data = CFPropertyList.native_types(plist_obj.value)
   end
 
+  def self.save_plist(path, plist_data, format)
+    overrides_plist       = CFPropertyList::List.new
+    overrides_plist.value = CFPropertyList.guess(plist_data)
+    begin
+      overrides_plist.save(path, format)
+    rescue => e
+      debug("Could not save plist to #{path}: #{e}")
+    end
+  end
+
   # Clean out the @property_hash variable containing the cached list of services
   def flush
     @property_hash.clear
@@ -307,16 +317,12 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     if has_macosx_plist_overrides?
       overrides = self.class.read_plist(Launchd_Overrides)
       overrides[resource[:name]] = { "Disabled" => false }
-      overrides_plist       = CFPropertyList::List.new
-      overrides_plist.value = CFPropertyList.guess(overrides)
-      overrides_plist.save(Launchd_Overrides, CFPropertyList::List::FORMAT_XML)
+      self.class.save_plist(Launchd_Overrides, overrides, CFPropertyList::List::FORMAT_XML)
     else
       job_path, job_plist = plist_from_label(resource[:name])
       if self.enabled? == :false
         job_plist.delete("Disabled")
-        job_plist_file       = CFPropertyList::List.new
-        job_plist_file.value = CFPropertyList.guess(job_plist)
-        job_plist_file.save(job_path, CFPropertyList::List::FORMAT_XML)
+        self.class.save_plist(job_path, job_plist, CFPropertyList::List::FORMAT_XML)
       end
     end
   end
