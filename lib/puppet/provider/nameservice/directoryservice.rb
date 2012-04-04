@@ -149,7 +149,11 @@ class DirectoryService < Puppet::Provider::NameService
         plist_data.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
         Puppet.debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
       end
-      plist_obj = CFPropertyList::List.new(:data => plist_data)
+      begin
+        plist_obj = CFPropertyList::List.new(:data => plist_data)
+      rescue => e
+        fail("A plist file could not be properly read by CFPropertyList: #{e.inspect}")
+      end
     end
     CFPropertyList.native_types(plist_obj.value)
   end
