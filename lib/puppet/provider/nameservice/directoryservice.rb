@@ -327,7 +327,8 @@ class DirectoryService < Puppet::Provider::NameService
 
         # Finally, we can convert the nested plist back to binary, embed it
         # into the user's plist, and convert the resultant plist back to
-        # a binary plist.
+        # a binary plist. We need to set users_plist['ShadowHashData'][0].blob = true
+        # because we're saving binary data to that key.
         binary_password_hash_plist            = CFPropertyList::List.new
         binary_password_hash_plist.value      = CFPropertyList.guess(password_hash_plist)
         users_plist['ShadowHashData'][0]      = binary_password_hash_plist.to_str
