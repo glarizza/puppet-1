@@ -154,6 +154,16 @@ class DirectoryService < Puppet::Provider::NameService
     CFPropertyList.native_types(plist_obj.value)
   end
 
+  def self.save_plist(path, plist_data, format)
+    overrides_plist       = CFPropertyList::List.new
+    overrides_plist.value = CFPropertyList.guess(plist_data)
+    begin
+      overrides_plist.save(path, format)
+    rescue => e
+      fail("Could not save plist to #{path}: #{e.inspect}")
+    end
+  end
+
   def self.generate_attribute_hash(input_hash, *type_properties)
     attribute_hash = {}
     input_hash.keys.each do |key|
@@ -318,9 +328,7 @@ class DirectoryService < Puppet::Provider::NameService
         binary_password_hash_plist.value      = CFPropertyList.guess(password_hash_plist)
         users_plist['ShadowHashData'][0]      = binary_password_hash_plist.to_str
         users_plist['ShadowHashData'][0].blob = true
-        users_plist_file                      = CFPropertyList::List.new
-        users_plist_file.value                = CFPropertyList.guess(users_plist)
-        users_plist_file.save(@plist_path, CFPropertyList::List::FORMAT_BINARY)
+        save_plist(@plist_path, users_plist, CFPropertyList::List::FORMAT_BINARY)
       end
     end
   end
