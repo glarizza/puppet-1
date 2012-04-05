@@ -75,9 +75,13 @@ Puppet::Type.type(:macauthorization).provide :macauthorization, :parent => Puppe
         plist_data = File.open(path, "r:UTF-8").read
         if plist_data =~ bad_xml_doctype
           plist_data.gsub!( bad_xml_doctype, Plist_Xml_Doctype )
-          debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
+          Puppet.debug("Had to fix plist with incorrect DOCTYPE declaration: #{path}")
         end
-        plist_obj = CFPropertyList::List.new(:data => plist_data)
+        begin
+          plist_obj = CFPropertyList::List.new(:data => plist_data)
+        rescue => e
+          fail("A plist file could not be properly read by CFPropertyList: #{e.inspect}")
+        end
       end
       CFPropertyList.native_types(plist_obj.value)
     end
