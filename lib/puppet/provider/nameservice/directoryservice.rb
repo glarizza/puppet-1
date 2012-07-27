@@ -601,11 +601,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       fail("Could not set GeneratedUID for #{@resource.class.name} #{@resource.name}: #{detail}")
     end
 
-    if value = @resource.should(:password) and value != ""
-      self.class.set_password(@resource[:name], guid, value)
-    end
-
-    # Now we create all the standard properties
+    # create all the standard properties before setting password
     Puppet::Type.type(@resource.class.name).validproperties.each do |property|
       next if property == :ensure
       value = @resource.should(property)
@@ -630,6 +626,17 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
           end
         end
       end
+    end
+
+    # and now set the password, salt, and iterations
+    if value = @resource.should(:password) and value != ""
+      self.class.set_password(@resource[:name], guid, value)
+    end
+    if value = @resource.should(:salt) and value != ""
+      self.salt = value
+    end
+    if value = @resource.should(:iterations) and value != ""
+      self.iterations = value
     end
   end
 
