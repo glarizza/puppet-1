@@ -316,8 +316,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     if (not File.exists?("#{users_plist_dir}/#{resource_name}.plist")) \
     or (not File.readable?("#{users_plist_dir}/#{resource_name}.plist"))
       fail("#{users_plist_dir}/#{resource_name}.plist is not readable, " + \
-            "please check that permissions are correct and that the file " + \
-            "is not corrupt.")
+            "please check that permissions are correct.")
     else
       converted_users_plist = plutil('-convert',    \
                                      'xml1',        \
