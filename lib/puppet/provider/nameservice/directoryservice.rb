@@ -316,8 +316,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     if (not File.exists?("#{users_plist_dir}/#{resource_name}.plist")) \
     or (not File.readable?("#{users_plist_dir}/#{resource_name}.plist"))
       fail("#{users_plist_dir}/#{resource_name}.plist is not readable, " + \
-            "please check that permissions are correct and that the file " + \
-            "is not corrupt.")
+            "please check that permissions are correct.")
     else
       converted_users_plist = plutil('-convert',    \
                                      'xml1',        \
@@ -561,7 +560,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
 
       # if they're not a member, make them one.
       add_members(current_members, value)
-    else
+    elsif ns_to_ds_attribute_map.key? param.intern
       exec_arg_vector = self.class.get_exec_preamble("-create", @resource[:name])
       # JJM: The following line just maps the NS name to the DS name
       #      e.g. { :uid => 'UniqueID' }
@@ -601,11 +600,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       fail("Could not set GeneratedUID for #{@resource.class.name} #{@resource.name}: #{detail}")
     end
 
-    if value = @resource.should(:password) and value != ""
-      self.class.set_password(@resource[:name], guid, value)
-    end
-
-    # Now we create all the standard properties
+    # create all the standard properties before setting password
     Puppet::Type.type(@resource.class.name).validproperties.each do |property|
       next if property == :ensure
       value = @resource.should(property)
@@ -618,7 +613,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       if value != "" and not value.nil?
         if property == :members
           add_members(nil, value)
-        else
+        elsif ns_to_ds_attribute_map.key? property.intern
           exec_arg_vector = self.class.get_exec_preamble("-create", @resource[:name])
           exec_arg_vector << ns_to_ds_attribute_map[property.intern]
           next if property == :password  # skip setting the password here
@@ -630,6 +625,17 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
           end
         end
       end
+    end
+
+    # and now set the password, salt, and iterations
+    if value = @resource.should(:password) and value != ""
+      self.class.set_password(@resource[:name], guid, value)
+    end
+    if value = @resource.should(:salt) and value != ""
+      self.salt = value
+    end
+    if value = @resource.should(:iterations) and value != ""
+      self.iterations = value
     end
   end
 
