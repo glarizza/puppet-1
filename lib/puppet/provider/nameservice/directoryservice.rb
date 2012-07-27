@@ -262,7 +262,13 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       # a previous version of OS X, we will fail early and warn them. If the
       # version of OS X is greater than 10.7, a salted-sha512 PBKDF2 password
       # will be used (and Puppet will fail if the password hash isn't 256
-      # characters.
+      # characters. As of 10.8, you ALSO have the condition where a machine
+      # could have been upgraded and there could be users that still have a
+      # 10.7-style password hash. Apple actually upgrades that hash to a 10.8-
+      # style PBKDF2 password hash if/when the user logs in. Based on that
+      # behavior, if a machine is on version 10.8 AND a user exists with a
+      # 10.7-style password hash, AND Puppet is enforcing a 10.8 style hash,
+      # then it will remove the 10.7-style hash and create a 10.8-style hash.
       if get_macosx_version_major == '10.7' and password_hash.length != 136
         fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
              " Please check your password and try again.")
@@ -271,10 +277,9 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
               "256 characters. Please check your password and try again.")
       else
         if @converted_hash_plist['SALTED-SHA512']
-          set_salted_sha512(resource_name, password_hash)
-        else
-          set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash)
+          @converted_hash_plist['SALTED-SHA512'] = nil
         end
+        set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash)
       end
     end
   end
