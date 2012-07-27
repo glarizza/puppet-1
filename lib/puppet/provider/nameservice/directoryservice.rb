@@ -561,7 +561,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
 
       # if they're not a member, make them one.
       add_members(current_members, value)
-    else
+    elsif ns_to_ds_attribute_map.key? param.intern
       exec_arg_vector = self.class.get_exec_preamble("-create", @resource[:name])
       # JJM: The following line just maps the NS name to the DS name
       #      e.g. { :uid => 'UniqueID' }
@@ -618,7 +618,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       if value != "" and not value.nil?
         if property == :members
           add_members(nil, value)
-        else
+        elsif ns_to_ds_attribute_map.key? property.intern
           exec_arg_vector = self.class.get_exec_preamble("-create", @resource[:name])
           exec_arg_vector << ns_to_ds_attribute_map[property.intern]
           next if property == :password  # skip setting the password here
