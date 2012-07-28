@@ -530,7 +530,7 @@ module Puppet
             is used in OS X"
 
       munge do |value|
-        if value.is_a?(String) and Value =~/^[-0-9]+$/
+        if value.is_a?(String) and value =~/^[-0-9]+$/
           Integer(value)
         else
           value
