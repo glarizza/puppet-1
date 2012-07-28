@@ -269,20 +269,22 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       # behavior, if a machine is on version 10.8 AND a user exists with a
       # 10.7-style password hash, AND Puppet is enforcing a 10.8 style hash,
       # then it will remove the 10.7-style hash and create a 10.8-style hash.
-      if get_macosx_version_major == '10.7' and password_hash.length != 136
-        fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
-             " Please check your password and try again.")
-      elsif get_macosx_version_major != '10.7' and password_hash.length != 256
-        fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of " + \
-              "256 characters. Please check your password and try again.")
-      else
-        converted_hash_plist = get_shadowhashdata(resource_name)
-        if converted_hash_plist['SALTED-SHA512']
-          set_salted_sha512(resource_name, password_hash, converted_hash_plist)
+      converted_hash_plist = get_shadowhashdata(resource_name)
+      if get_macosx_version_major == '10.7'
+        if password_hash.length != 136
+          fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
+               " Please check your password and try again.")
         else
+          set_salted_sha512(resource_name, password_hash, converted_hash_plist)
+        end
+      else
+        if password_hash.length != 256
+         fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of " + \
+               "256 characters. Please check your password and try again.")
+        else
+          converted_hash_plist.delete('SALTED-SHA512') if converted_hash_plist['SALTED-SHA512']
           set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash, converted_hash_plist)
         end
-        set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash)
       end
     end
   end
@@ -405,6 +407,11 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   # to be set for the 'ShadowHashData' key in the User's plist.
     case field
     when 'salt', 'entropy'
+      unless converted_hash_plist['SALTED-SHA512-PBKDF2']
+        converted_hash_plist['SALTED-SHA512-PBKDF2'] = {}
+        converted_hash_plist['SALTED-SHA512-PBKDF2'][field] = \
+          StringIO.new unless converted_hash_plist['SALTED-SHA512-PBKDF2'][field]
+      end
       converted_hash_plist['SALTED-SHA512-PBKDF2'][field].string =  \
         value.unpack('a2'*(value.size/2)).collect { |i| i.hex.chr }.join
     when 'iterations'
