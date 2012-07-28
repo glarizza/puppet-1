@@ -269,12 +269,12 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       # behavior, if a machine is on version 10.8 AND a user exists with a
       # 10.7-style password hash, AND Puppet is enforcing a 10.8 style hash,
       # then it will remove the 10.7-style hash and create a 10.8-style hash.
-      converted_hash_plist = get_shadowhashdata(resource_name)
       if get_macosx_version_major == '10.7'
         if password_hash.length != 136
           fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
                " Please check your password and try again.")
         else
+          converted_hash_plist = get_shadowhashdata(resource_name)
           set_salted_sha512(resource_name, password_hash, converted_hash_plist)
         end
       else
@@ -282,6 +282,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
          fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of " + \
                "256 characters. Please check your password and try again.")
         else
+          converted_hash_plist = get_shadowhashdata(resource_name)
           converted_hash_plist.delete('SALTED-SHA512') if converted_hash_plist['SALTED-SHA512']
           set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash, converted_hash_plist)
         end
