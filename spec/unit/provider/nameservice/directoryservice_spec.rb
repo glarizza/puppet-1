@@ -11,7 +11,7 @@ require 'spec_helper'
       @provider = provider_class.new(@resource)
     end
 
-    it "[#6009] should handle nested arrays of members" do
+    it "[#6009] handle nested arrays of members" do
       current = ["foo", "bar", "baz"]
       desired = ["foo", ["quux"], "qorp"]
       group   = 'example'
@@ -31,28 +31,28 @@ require 'spec_helper'
           with([:dseditgroup, '-o', 'edit', '-n', '.', '-a', add, group])
       end
 
-      expect { @provider.set(:members, desired) }.should_not raise_error
+      expect { @provider.set(:members, desired) }.to_not raise_error
     end
   end
 end
 
 describe 'DirectoryService.single_report' do
-  it 'should fail on OS X < 10.5' do
+  it 'fail on OS X < 10.5' do
     Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.4")
 
-    lambda {
+    expect {
       Puppet::Provider::NameService::DirectoryService.single_report('resource_name')
-    }.should raise_error(RuntimeError, "Puppet does not support OS X versions < 10.5")
+    }.to raise_error(RuntimeError, "Puppet does not support OS X versions < 10.5")
   end
 
-  it 'should use plist data on >= 10.5' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.5")
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_ds_path).returns('Users')
-    Puppet::Provider::NameService::DirectoryService.stubs(:list_all_present).returns(
+  it 'use plist data on >= 10.5' do
+    Puppet::Provider::NameService::DirectoryService.expects(:get_macosx_version_major).twice.returns("10.5")
+    Puppet::Provider::NameService::DirectoryService.expects(:get_ds_path).returns('Users')
+    Puppet::Provider::NameService::DirectoryService.expects(:list_all_present).returns(
       ['root', 'user1', 'user2', 'resource_name']
     )
-    Puppet::Provider::NameService::DirectoryService.stubs(:generate_attribute_hash)
-    Puppet::Provider::NameService::DirectoryService.stubs(:execute)
+    Puppet::Provider::NameService::DirectoryService.expects(:generate_attribute_hash)
+    Puppet::Provider::NameService::DirectoryService.expects(:execute)
     Puppet::Provider::NameService::DirectoryService.expects(:parse_dscl_plist_data)
 
     Puppet::Provider::NameService::DirectoryService.single_report('resource_name')
@@ -60,17 +60,17 @@ describe 'DirectoryService.single_report' do
 end
 
 describe 'DirectoryService.get_exec_preamble' do
-  it 'should fail on OS X < 10.5' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.4")
+  it 'fail on OS X < 10.5' do
+    Puppet::Provider::NameService::DirectoryService.expects(:get_macosx_version_major).returns("10.4")
 
-    lambda {
+    expect {
       Puppet::Provider::NameService::DirectoryService.get_exec_preamble('-list')
-    }.should raise_error(RuntimeError, "Puppet does not support OS X versions < 10.5")
+    }.to raise_error(RuntimeError, "Puppet does not support OS X versions < 10.5")
   end
 
-  it 'should use plist data on >= 10.5' do
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_macosx_version_major).returns("10.5")
-    Puppet::Provider::NameService::DirectoryService.stubs(:get_ds_path).returns('Users')
+  it 'use plist data on >= 10.5' do
+    Puppet::Provider::NameService::DirectoryService.expects(:get_macosx_version_major).returns("10.5")
+    Puppet::Provider::NameService::DirectoryService.expects(:get_ds_path).returns('Users')
 
     Puppet::Provider::NameService::DirectoryService.get_exec_preamble('-list').should include("-plist")
   end
@@ -114,6 +114,27 @@ describe 'DirectoryService password behavior' do
     Puppet::Provider::NameService::DirectoryService
   end
 
+  let :salted_sha512_shadow_hash_data do
+    {'ShadowHashData' => [StringIO.new(salted_sha512_binary_plist)]}
+  end
+
+  let :salted_sha512_pbkdf2_shadow_hash_data do
+    {'ShadowHashData' => [StringIO.new(salted_sha512_pbkdf2_binary_plist)]}
+  end
+
+  # In OS X versions 10.7 and 10.8, the user password is obtained by
+  # reading the user's plist in /var/db/dslocal/nodes/Default/users/#{username}
+  # and extracting a binary plist that's stored as the value of the
+  # 'ShadowhashData' key. In the Directory Service provider, this binary
+  # plist is converted to a Hash and stored in a variable called
+  # 'converted_hash_plist'. The user password in 10.7 is stored as the
+  # value of the 'SALTED-SHA512' key in the converted_hash_plist Hash.
+  # In 10.8, new users have their PBKDF2 password data stored as the
+  # value of the 'SALTED-SHA512-PBKDF2' key in the converted_hash_plist
+  # Hash. It's also possible for users that were created in 10.7 to still
+  # have a 'SALTED-SHA512' key in the converted_hash_plist when the machine
+  # is upgraded to 10.8. The following two values are converted_hash_plist
+  # Hash values formatted for 10.7 and 10.8 respectively.
   let :salted_sha512_converted_hash_plist do
     { 'SALTED-SHA512' => StringIO.new(salted_sha512_pw_string)
     }
@@ -128,20 +149,12 @@ describe 'DirectoryService password behavior' do
     }
   end
 
-  let :salted_sha512_shadow_hash_data do
-    {'ShadowHashData' => [StringIO.new(salted_sha512_binary_plist)]}
-  end
-
-  let :salted_sha512_pbkdf2_shadow_hash_data do
-    {'ShadowHashData' => [StringIO.new(salted_sha512_pbkdf2_binary_plist)]}
-  end
-
   subject do
     Puppet::Provider::NameService::DirectoryService
   end
 
-  it 'should return the correct password when it is set on 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.7').times(6)
+  it 'return the correct password when it is set on 10.7' do
+    subject.expects(:get_macosx_version_major).returns('10.7').times(3)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_converted_hash_plist)
     subject.expects(:set_salted_sha512 \
@@ -156,8 +169,8 @@ describe 'DirectoryService password behavior' do
                         ).should == salted_sha512_hash
   end
 
-  it 'should return the correct salt when it is set on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').times(5)
+  it 'return the correct salt value when it is set on 10.8' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(2)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_pbkdf2_converted_hash_plist)
     subject.expects(:set_salted_sha512_pbkdf2 \
@@ -172,8 +185,8 @@ describe 'DirectoryService password behavior' do
                     ).should == salted_sha512_pbkdf2_salt_hex
   end
 
-  it 'should return the correct iterations when it is set on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').times(5)
+  it 'return the correct iterations value when it is set on 10.8' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(2)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_pbkdf2_converted_hash_plist)
     subject.expects(:set_salted_sha512_pbkdf2 \
@@ -188,8 +201,8 @@ describe 'DirectoryService password behavior' do
                     ).should == Integer(salted_sha512_pbkdf2_iterations)
   end
 
-  it 'should return the correct password when it is set on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').times(6)
+  it 'return the correct password when it is set on 10.8' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(3)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_pbkdf2_converted_hash_plist)
     subject.expects(:set_salted_sha512_pbkdf2 \
@@ -205,15 +218,18 @@ describe 'DirectoryService password behavior' do
                         ).should == salted_sha512_pbkdf2_hash
   end
 
-  it 'should execute get_salted_sha512 when getting the password on 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.7').twice
-    subject.expects(:get_salted_sha512).with(salted_sha512_converted_hash_plist).returns(salted_sha512_hash)
+  it 'execute get_salted_sha512 if a 10.7-style password hash exists
+      for a user and the get_password method is called' do
+    subject.expects(:get_macosx_version_major).returns('10.7')
+    subject.expects(:get_salted_sha512
+                   ).with(salted_sha512_converted_hash_plist
+                         ).returns(salted_sha512_hash)
     subject.get_password('uid', 'jeff', salted_sha512_converted_hash_plist)
   end
 
-  it 'should execute get_salted_sha512_pbkdf2 when getting the password on \
-      > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').twice
+  it 'execute get_salted_sha512_pbkdf2 when getting the password on
+      10.8' do
+    subject.expects(:get_macosx_version_major).returns('10.8')
     subject.expects(:get_salted_sha512_pbkdf2 \
                    ).with(salted_sha512_pbkdf2_converted_hash_plist, \
                           'entropy'                                  \
@@ -221,56 +237,65 @@ describe 'DirectoryService password behavior' do
     subject.get_password('uid', 'jeff', salted_sha512_pbkdf2_converted_hash_plist)
   end
 
-  it 'should fail if a salted-SHA512 password hash is not passed in 10.7' do
+  it 'return the 10.7-style password hash if it exists for a user on a 10.8
+      machine and the get_password method is called' do
+    subject.expects(:get_macosx_version_major).returns('10.8')
+    subject.expects(:get_salted_sha512 \
+                   ).with(salted_sha512_converted_hash_plist
+                         ).returns(salted_sha512_hash)
+    subject.get_password('uid', 'jeff', salted_sha512_converted_hash_plist)
+  end
+
+  it 'fail if a salted-SHA512 password hash is not passed in 10.7' do
     subject.expects(:get_macosx_version_major).returns('10.7').twice
     expect {
       subject.set_password('jeff', 'uid', 'badpassword')
-    }.should raise_error(RuntimeError, /OS X 10.7 requires a Salted SHA512 hash password of 136 characters./)
+    }.to raise_error(RuntimeError, /OS X 10.7 requires a Salted SHA512 hash password of 136 characters./)
   end
 
-  it 'should fail if a salted-SHA512-PBKDF2 password hash is not passed \
-      in > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').times(3)
+  it 'fail if a salted-SHA512-PBKDF2 password hash is not passed
+      in 10.8' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(2)
     expect {
       subject.set_password('jeff', 'uid', 'wrongpassword')
-    }.should raise_error(RuntimeError, \
+    }.to raise_error(RuntimeError, \
                          /OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of 256 characters/)
   end
 
-  it 'should not call get_salted_sha512_pbkdf2 with \'iterations\' on <= 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.7')
+  it 'do not attempt to get an \'iterations\' value when passed
+      a converted_hash_plist that contains a \'SALTED-SHA512\' key' do
     subject.expects(:get_salted_sha512_pbkdf2).never
     subject.get_iterations('jeff', salted_sha512_converted_hash_plist \
                     ).should == nil
 
   end
 
-  it 'should call get_salted_sha512_pbkdf2 with \'iterations\' on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8')
+  it 'return an \'iterations\' value when passed a converted_hash_plist
+      that contains a \'SALTED-SHA512-PBKDF2\' key' do
     subject.expects(:get_salted_sha512_pbkdf2 \
                    ).with(salted_sha512_pbkdf2_converted_hash_plist, \
                           'iterations').returns(true)
     subject.get_iterations('jeff', salted_sha512_pbkdf2_converted_hash_plist)
   end
 
-  it 'should not call get_salted_sha512_pbkdf2 with \'salt\' on <= 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.7')
+  it 'do not attempt to get a \'salt\' value when passed a
+      converted_hash_plist that contains a \'SALTED-SHA512\' key' do
     subject.expects(:get_salted_sha512_pbkdf2).never
     subject.get_salt('jeff', salted_sha512_converted_hash_plist \
                     ).should == nil
 
   end
 
-  it 'should call get_salted_sha512_pbkdf2 with \'salt\' on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8')
+  it 'return a \'salt\' value when passed a converted_hash_plist
+      that contains a \'SALTED-SHA512-PBKDF2\' key' do
     subject.expects(:get_salted_sha512_pbkdf2 \
                    ).with(salted_sha512_pbkdf2_converted_hash_plist, \
                           'salt').returns(true)
     subject.get_salt('jeff', salted_sha512_pbkdf2_converted_hash_plist)
   end
 
-  it 'should call set_salted_sha512 on 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.7').times(4)
+  it 'call set_salted_sha512 on 10.7 when setting the password' do
+    subject.expects(:get_macosx_version_major).returns('10.7').times(2)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_converted_hash_plist)
     subject.expects(:set_salted_sha512 \
@@ -281,8 +306,8 @@ describe 'DirectoryService password behavior' do
     subject.set_password('jeff', 'uid', salted_sha512_hash)
   end
 
-  it 'should call set_salted_sha512_pbkdf2 on > 10.7' do
-    subject.expects(:get_macosx_version_major).returns('10.8').times(4)
+  it 'call set_salted_sha512_pbkdf2 on 10.8 when setting the password' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(2)
     subject.expects(:get_shadowhashdata \
                    ).with('jeff').returns(salted_sha512_pbkdf2_converted_hash_plist)
     subject.expects(:set_salted_sha512_pbkdf2 \
@@ -294,22 +319,39 @@ describe 'DirectoryService password behavior' do
     subject.set_password('jeff', 'uid', salted_sha512_pbkdf2_hash)
   end
 
-  it 'should fail if the OS X Users plist does not exist' do
+  it 'delete the SALTED-SHA512 key and call set_salted_sha512_pbkdf2 if a
+      10.7-style user password exists on a 10.8 machine and a 10.8-style
+      password is enforced' do
+    subject.expects(:get_macosx_version_major).returns('10.8').times(2)
+    subject.expects(:get_shadowhashdata \
+                   ).with('jeff').returns(salted_sha512_converted_hash_plist)
+    # The empty hash as the last argument of set_salted_sha512_pbkdf2
+    # tests whether Hash.delete gets performed on the converted_hash_plist
+    subject.expects(:set_salted_sha512_pbkdf2 \
+                   ).with('jeff',                                   \
+                          'entropy',                                \
+                          salted_sha512_pbkdf2_hash,                \
+                          {}
+                         ).returns(true)
+    subject.set_password('jeff', 'uid', salted_sha512_pbkdf2_hash)
+  end
+
+  it 'fail if the OS X Users plist does not exist' do
     File.expects(:exists?).with(plist_path).returns false
     expect {
       subject.get_shadowhashdata('jeff')
-    }.should raise_error(RuntimeError, /jeff.plist is not readable/)
+    }.to raise_error(RuntimeError, /jeff.plist is not readable/)
   end
 
-  it 'should fail if the OS X Users plist is not readable' do
+  it 'fail if the OS X Users plist is not readable' do
     File.expects(:exists?).with(plist_path).returns true
     File.expects(:readable?).with(plist_path).returns false
     expect {
       subject.get_shadowhashdata('jeff')
-    }.should raise_error(RuntimeError, /jeff.plist is not readable/)
+    }.to raise_error(RuntimeError, /jeff.plist is not readable/)
   end
 
-  it 'should call convert_binary_to_xml if a correct Users plist is passed' do
+  it 'call convert_binary_to_xml if a correct Users plist is passed' do
     File.expects(:exists?).with(plist_path).returns true
     File.expects(:readable?).with(plist_path).returns true
     Plist.expects(:parse_xml \
@@ -320,7 +362,7 @@ describe 'DirectoryService password behavior' do
     subject.get_shadowhashdata('jeff')
   end
 
-  it 'should return false if the Users plist lacks a ShadowHashData field' do
+  it 'return false if the Users plist lacks a ShadowHashData field' do
     File.expects(:exists?).with(plist_path).returns true
     File.expects(:readable?).with(plist_path).returns true
     Plist.expects(:parse_xml \
@@ -357,7 +399,7 @@ describe '(#4855) directoryservice group resource failure' do
     @provider = provider_class.new(@resource)
   end
 
-  it 'should delete a group member if the user does not exist' do
+  it 'delete a group member if the user does not exist' do
     stub_resource.stubs(:[]).with(:name).returns('fake_group')
     stub_resource.stubs(:name).returns('fake_group')
     subject.expects(:execute).with([:dseditgroup, '-o', 'edit', '-n', '.',
