@@ -409,6 +409,8 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     when 'salt', 'entropy'
       unless converted_hash_plist['SALTED-SHA512-PBKDF2']
         converted_hash_plist['SALTED-SHA512-PBKDF2'] = {}
+      end
+      unless converted_hash_plist['SALTED-SHA512-PBKDF2'][field]
         converted_hash_plist['SALTED-SHA512-PBKDF2'][field] = \
           StringIO.new unless converted_hash_plist['SALTED-SHA512-PBKDF2'][field]
       end
