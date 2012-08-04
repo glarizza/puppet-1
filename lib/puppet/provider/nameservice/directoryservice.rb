@@ -128,15 +128,19 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     dscl_output.split("\n")
   end
 
-  def self.parse_dscl_plist_data(dscl_output)
-    nsdata = dscl_output.to_ns.dataUsingEncoding(NSUTF8StringEncoding)
-    obj = OSX::NSPropertyListSerialization.objc_send(
+  def self.data_from_plist(plist)
+    nsdata = plist.to_ns.dataUsingEncoding(NSUTF8StringEncoding)
+    data_hash = OSX::NSPropertyListSerialization.objc_send(
       :propertyListFromData, nsdata,
       #:mutabilityOption, OSX::NSPropertyListMutableContainersAndLeaves,
       :mutabilityOption, OSX::NSPropertyListImmutable,
       :format, nil,
       :errorDescription, nil)
-    obj.to_ruby
+    data_hash.to_ruby
+  end
+
+  def self.parse_dscl_plist_data(dscl_output)
+    data_from_plist dscl_output
   end
 
   def self.generate_attribute_hash(input_hash, *type_properties)
@@ -163,18 +167,20 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       attribute_hash[ds_to_ns_attribute_map[ds_attribute]] = ds_value
     end
 
-    converted_hash_plist = get_shadowhashdata(attribute_hash[:name])
+    users_plist = get_users_plist(attribute_hash[:name])
 
     # NBK: need to read the existing password here as it's not actually
     # stored in the user record. It is stored at a path that involves the
     # UUID of the user record for non-Mobile local acccounts.
     # Mobile Accounts are out of scope for this provider for now
-    attribute_hash[:password] = self.get_password(attribute_hash[:guid], attribute_hash[:name], converted_hash_plist) if @resource_type.validproperties.include?(:password) and Puppet.features.root?
+    attribute_hash[:password] = self.get_password(attribute_hash[:guid], attribute_hash[:name], users_plist) if @resource_type.validproperties.include?(:password) and Puppet.features.root?
 
     # GDL: The salt and iterations properties are only available in versions of OS X
     #      greater than 10.7
-    attribute_hash[:salt] = self.get_salt(attribute_hash[:name], converted_hash_plist)
-    attribute_hash[:iterations] = self.get_iterations(attribute_hash[:name], converted_hash_plist)
+    if (Puppet::Util::Package.versioncmp(get_macosx_version_major, '10.7') == 1)
+      attribute_hash[:salt] = self.get_salt(attribute_hash[:name], users_plist)
+      attribute_hash[:iterations] = self.get_iterations(attribute_hash[:name], users_plist)
+    end
     attribute_hash
   end
 
@@ -288,23 +294,25 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
           fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
                " Please check your password and try again.")
         else
-          converted_hash_plist = get_shadowhashdata(resource_name)
-          set_salted_sha512(resource_name, password_hash, converted_hash_plist)
+          users_plist = get_users_plist
+          set_salted_sha512(resource_name, password_hash, users_plist)
         end
       else
         if password_hash.length != 256
          fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of " + \
                "256 characters. Please check your password and try again.")
         else
-          converted_hash_plist = get_shadowhashdata(resource_name)
+          users_plist = get_users_plist
+          ## FIXME: Need to sort out this mess
           converted_hash_plist.delete('SALTED-SHA512') if converted_hash_plist['SALTED-SHA512']
-          set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash, converted_hash_plist)
+
+          set_salted_sha512_pbkdf2(resource_name, 'entropy', password_hash, users_plist)
         end
       end
     end
   end
 
-  def self.get_password(guid, username, converted_hash_plist)
+  def self.get_password(guid, username, users_plist)
     # Use Puppet::Util::Package.versioncmp() to catch the scenario where a
     # version '10.10' would be < '10.7' with simple string comparison. This
     # if-statement only executes if the current version is less-than 10.7
@@ -319,17 +327,39 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       end
       password_hash
     else
-      return nil if not converted_hash_plist
+      ## TODO: Is this even necessary anymore?
+      #return nil if not users_plist
+
+      embedded_bplist = get_embedded_binary_plist(users_plist)
+      return nil if not embedded_bplist
 
       # If you've upgraded from 10.7 to 10.8, you probably have an old-style
       # users's plist that uses SALTED-SHA512 instead of SALTED-SHA512-PBKDF2.
       # In this case, we need to use the correct method to discover the hash.
-      if converted_hash_plist['SALTED-SHA512']
-        get_salted_sha512(converted_hash_plist)
+      if embedded_bplist['SALTED-SHA512']
+        get_salted_sha512(embedded_bplist)
       else
         get_salted_sha512_pbkdf2(converted_hash_plist, 'entropy')
       end
     end
+  end
+
+  def self.get_embedded_binary_plist(users_plist)
+    if users_plist['ShadowHashData']
+      NSPropertyListSerialization.objc_send(
+        :propertyListFromData, users_plist['ShadowHashData'][0],
+        :mutabilityOption, NSPropertyListMutableContainersAndLeaves,
+        :format, nil,
+        :errorDescription, nil)
+    else
+      nil
+    end
+  end
+
+  def self.get_users_plist(resource_name)
+  # This method will retrieve the user's plist located at
+  #  /var/db/dslocal/nodes/Default/users
+    NSMutableDictionary.dictionaryWithContentsOfFile("#{users_plist_dir}/#{resource_name}.plist")
   end
 
   def self.get_shadowhashdata(resource_name)
@@ -342,15 +372,11 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       fail("#{users_plist_dir}/#{resource_name}.plist is not readable, " + \
             "please check that permissions are correct.")
     else
-      converted_users_plist = plutil('-convert',    \
-                                     'xml1',        \
-                                     '-o',          \
-                                     '/dev/stdout', \
-                                     "#{users_plist_dir}/#{resource_name}.plist")
-      users_plist = Plist::parse_xml(converted_users_plist)
+      users_plist = OSX::NSMutableDictionary.dictionaryWithContentsOfFile("#{users_plist_dir}/#{resource_name}.plist")
+
+
       if users_plist['ShadowHashData']
-        password_hash_plist = users_plist['ShadowHashData'][0].string
-        convert_binary_to_xml(password_hash_plist)
+        password_hash_plist = users_plist['ShadowHashData'][0]
       else
         false
       end
@@ -368,14 +394,14 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     plutil('-convert', 'binary1', "#{users_plist_dir}/#{resource_name}.plist")
   end
 
-  def self.get_salted_sha512(converted_hash_plist)
+  def self.get_salted_sha512(embedded_bplist)
   # This method retrieves the password hash from the embedded-plist
   # retrieved from the 'ShadowHashData' key in the user's plist.
   # Converted_hash_plist['SALTED-SHA512'].string is a Base64 encoded
   # string. The password_hash provided as a resource attribute is a
   # hex value. We need to convert the Base64 encoded string to a
   # hex value and provide it back to Puppet.
-    converted_hash_plist['SALTED-SHA512'].string.unpack("H*").first
+    embedded_bplist['SALTED-SHA512'].to_s.gsub(/<|>/,"").split.join
   end
 
   def self.set_salted_sha512(resource_name, password_hash, converted_hash_plist)
