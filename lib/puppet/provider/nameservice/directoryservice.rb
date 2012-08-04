@@ -3,6 +3,13 @@ require 'puppet/provider/nameservice'
 require 'facter/util/plist'
 require 'fileutils'
 
+begin
+  require 'osx/cocoa'
+  include OSX
+rescue LoadError
+  Puppet.debug('Could not load Mac-specific RubyCocoa Library')
+end
+
 class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameService
   # JJM: Dive into the singleton_class
   class << self
@@ -122,7 +129,17 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   end
 
   def self.parse_dscl_plist_data(dscl_output)
-    Plist.parse_xml(dscl_output)
+    nsdata = dscl_output.to_ns.dataUsingEncoding(NSUTF8StringEncoding)
+    obj = OSX::NSPropertyListSerialization.objc_send(
+      :propertyListFromData, nsdata,
+      :mutabilityOption, OSX::NSPropertyListMutableContainersAndLeaves,
+      #:mutabilityOption, OSX::NSPropertyListImmutable,
+      :format, nil,
+      :errorDescription, nil)
+    require 'pp'
+    pp obj
+    obj
+    #obj.to_hash
   end
 
   def self.generate_attribute_hash(input_hash, *type_properties)
