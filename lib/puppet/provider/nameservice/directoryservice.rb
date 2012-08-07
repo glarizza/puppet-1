@@ -141,11 +141,12 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   end
 
   def self.generate_attribute_hash(input_hash, *type_properties)
+    # This method is where the property hash is built for every user
+    # instance that is discovered on the system. Here is where we munge
+    # values into integers, strings, or arrays as well as map values
+    # that come from the user's plist to Puppet properties.
     attribute_hash = {}
     input_hash.keys.each do |key|
-      #ds_attribute = key.sub("dsAttrTypeStandard:", "")
-      ds_attribute = key
-      #next unless (ds_to_ns_attribute_map.keys.include?(ds_attribute) and type_properties.include? ds_to_ns_attribute_map[ds_attribute])
       ds_value = input_hash[key]
       case ds_value.first
         when :members
@@ -167,6 +168,12 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
       attribute_hash[key.to_sym] = input_hash[key].to_ruby.first
     end
 
+    # The comment property comes from the 'realname' key in the user's plist
+    attribute_hash[:comment] = attribute_hash[:realname]
+
+    # Read the entire user's plist in preparation of retrieving the password.
+    # NOTE: We MIGHT already have the data read from disk at this point - look
+    #       to refactor this. Spoiler: it's in attribute_hash[:ShadowHashData]
     users_plist = get_users_plist(attribute_hash[:name])
 
     # NBK: need to read the existing password here as it's not actually
