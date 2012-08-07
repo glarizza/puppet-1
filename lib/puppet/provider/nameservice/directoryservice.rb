@@ -74,6 +74,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     # JJM: Properties are dependent on the Puppet::Type we're managine.
     type_property_array = [:name] + @resource_type.validproperties
 
+
     # Create a new instance of this Puppet::Type for each object present
     #    on the system.
     list_all_present.collect do |name_string|
@@ -132,8 +133,8 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     nsdata = plist.to_ns.dataUsingEncoding(NSUTF8StringEncoding)
     data_hash = OSX::NSPropertyListSerialization.objc_send(
       :propertyListFromData, nsdata,
-      #:mutabilityOption, OSX::NSPropertyListMutableContainersAndLeaves,
-      :mutabilityOption, OSX::NSPropertyListImmutable,
+      :mutabilityOption, OSX::NSPropertyListMutableContainersAndLeaves,
+      #:mutabilityOption, OSX::NSPropertyListImmutable,
       :format, nil,
       :errorDescription, nil)
     data_hash.to_ruby
@@ -146,12 +147,15 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   def self.generate_attribute_hash(input_hash, *type_properties)
     attribute_hash = {}
     input_hash.keys.each do |key|
-      ds_attribute = key.sub("dsAttrTypeStandard:", "")
-      next unless (ds_to_ns_attribute_map.keys.include?(ds_attribute) and type_properties.include? ds_to_ns_attribute_map[ds_attribute])
+      #ds_attribute = key.sub("dsAttrTypeStandard:", "")
+      ds_attribute = key
+      #next unless (ds_to_ns_attribute_map.keys.include?(ds_attribute) and type_properties.include? ds_to_ns_attribute_map[ds_attribute])
       ds_value = input_hash[key]
-      case ds_to_ns_attribute_map[ds_attribute]
+      case ds_value.first
         when :members
           ds_value = ds_value # only members uses arrays so far
+        when :name
+          ds_value = ds_value[0]
         when :gid, :uid
           # OS X stores objects like uid/gid as strings.
           # Try casting to an integer for these cases to be
@@ -164,7 +168,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
           end
         else ds_value = ds_value[0]
       end
-      attribute_hash[ds_to_ns_attribute_map[ds_attribute]] = ds_value
+      attribute_hash[key.to_sym] = input_hash[key].to_ruby.first
     end
 
     users_plist = get_users_plist(attribute_hash[:name])
@@ -173,7 +177,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     # stored in the user record. It is stored at a path that involves the
     # UUID of the user record for non-Mobile local acccounts.
     # Mobile Accounts are out of scope for this provider for now
-    attribute_hash[:password] = self.get_password(attribute_hash[:guid], attribute_hash[:name], users_plist) if @resource_type.validproperties.include?(:password) and Puppet.features.root?
+    attribute_hash[:password] = self.get_password(attribute_hash[:generateduid], attribute_hash[:name], users_plist) if @resource_type.validproperties.include?(:password) and Puppet.features.root?
 
     # GDL: The salt and iterations properties are only available in versions of OS X
     #      greater than 10.7
@@ -192,21 +196,17 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     #     This class method returns nil if the object doesn't exist
     #     Otherwise, it returns a hash of the object properties.
 
-    all_present_str_array = list_all_present
+    all_present_str_array = Dir.glob('/var/db/dslocal/nodes/Default/users/*.plist').map do |user|
+      user = File.basename(user).gsub!('.plist','')
+    end
 
     # NBK: shortcut the process if the resource is missing
     return nil unless all_present_str_array.include? resource_name
 
-    dscl_vector = get_exec_preamble("-read", resource_name)
-    begin
-      dscl_output = execute(dscl_vector)
-    rescue Puppet::ExecutionFailure => detail
-      fail("Could not get report.  command execution failed.")
-    end
 
     # (#11593) Remove support for OS X 10.4 and earlier
     fail_if_wrong_version
-    dscl_plist = self.parse_dscl_plist_data(dscl_output)
+    dscl_plist = get_users_plist(resource_name)
 
     self.generate_attribute_hash(dscl_plist, *type_properties)
   end
@@ -345,7 +345,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   end
 
   def self.get_embedded_binary_plist(users_plist)
-    if users_plist['ShadowHashData']
+    if (not users_plist.nil?) and users_plist.keys.include?('ShadowHashData')
       NSPropertyListSerialization.objc_send(
         :propertyListFromData, users_plist['ShadowHashData'][0],
         :mutabilityOption, NSPropertyListMutableContainersAndLeaves,
