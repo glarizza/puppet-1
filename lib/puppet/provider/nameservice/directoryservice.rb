@@ -37,22 +37,22 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   # JJM: Note, this is de-coupled from the Puppet::Type, and must
   #     be actively maintained.  There may also be collisions with different
   #     types (Users, Groups, Mounts, Hosts, etc...)
-  def ds_to_ns_attribute_map; self.class.ds_to_ns_attribute_map; end
-  def self.ds_to_ns_attribute_map
-    {
-      'RecordName' => :name,
-      'PrimaryGroupID' => :gid,
-      'NFSHomeDirectory' => :home,
-      'UserShell' => :shell,
-      'UniqueID' => :uid,
-      'RealName' => :comment,
-      'Password' => :password,
-      'GeneratedUID' => :guid,
-      'IPAddress'    => :ip_address,
-      'ENetAddress'  => :en_address,
-      'GroupMembership' => :members,
-    }
-  end
+  #def ds_to_ns_attribute_map; self.class.ds_to_ns_attribute_map; end
+  #def self.ds_to_ns_attribute_map
+  #  {
+  #    'RecordName' => :name,
+  #    'PrimaryGroupID' => :gid,
+  #    'NFSHomeDirectory' => :home,
+  #    'UserShell' => :shell,
+  #    'UniqueID' => :uid,
+  #    'RealName' => :comment,
+  #    'Password' => :password,
+  #    'GeneratedUID' => :guid,
+  #    'IPAddress'    => :ip_address,
+  #    'ENetAddress'  => :en_address,
+  #    'GroupMembership' => :members,
+  #  }
+  #end
 
   # JJM The same table as above, inverted.
   def ns_to_ds_attribute_map; self.class.ns_to_ds_attribute_map end
@@ -121,12 +121,9 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
 
   def self.list_all_present
     # JJM: List all objects of this Puppet::Type already present on the system.
-    begin
-      dscl_output = execute(get_exec_preamble("-list"))
-    rescue Puppet::ExecutionFailure => detail
-      fail("Could not get #{@resource_type.name} list from DirectoryService")
+    all_users = Dir.chdir(users_plist_dir) do
+      Dir['*.plist'].select { |user| user.gsub!('.plist','') }
     end
-    dscl_output.split("\n")
   end
 
   def self.data_from_plist(plist)
@@ -134,7 +131,6 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     data_hash = OSX::NSPropertyListSerialization.objc_send(
       :propertyListFromData, nsdata,
       :mutabilityOption, OSX::NSPropertyListMutableContainersAndLeaves,
-      #:mutabilityOption, OSX::NSPropertyListImmutable,
       :format, nil,
       :errorDescription, nil)
     data_hash.to_ruby
@@ -196,8 +192,8 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
     #     This class method returns nil if the object doesn't exist
     #     Otherwise, it returns a hash of the object properties.
 
-    all_present_str_array = Dir.glob('/var/db/dslocal/nodes/Default/users/*.plist').map do |user|
-      user = File.basename(user).gsub!('.plist','')
+    all_present_str_array = Dir.chdir(users_plist_dir) do
+      Dir['*.plist'].select { |user| user.gsub!('.plist','') }
     end
 
     # NBK: shortcut the process if the resource is missing
@@ -294,7 +290,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
           fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters." + \
                " Please check your password and try again.")
         else
-          users_plist = get_users_plist
+          users_plist = get_users_plist(resource_name)
           set_salted_sha512(resource_name, password_hash, users_plist)
         end
       else
@@ -302,7 +298,7 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
          fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of " + \
                "256 characters. Please check your password and try again.")
         else
-          users_plist = get_users_plist
+          users_plist = get_users_plist(resource_name)
           ## FIXME: Need to sort out this mess
           converted_hash_plist.delete('SALTED-SHA512') if converted_hash_plist['SALTED-SHA512']
 
