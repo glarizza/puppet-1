@@ -6,7 +6,7 @@ Puppet::Type.type(:group).provide :directoryservice, :parent => Puppet::Provider
   "
 
   commands :dscl => "/usr/bin/dscl"
-  confine :operatingsystem => :darwin
-  defaultfor :operatingsystem => :darwin
+  confine :operatingsystem => :gentoo
+  defaultfor :operatingsystem => :gentoo
   has_feature :manages_members
 end
