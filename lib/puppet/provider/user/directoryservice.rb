@@ -21,10 +21,18 @@ Puppet::Type.type(:user).provide :directoryservice do
 ##                   ##
 
   # Provider command declarations
+<<<<<<< HEAD
   commands :uuidgen  => '/usr/bin/uuidgen'
   commands :dsimport => '/usr/bin/dsimport'
   commands :dscl     => '/usr/bin/dscl'
   commands :plutil   => '/usr/bin/plutil'
+=======
+  commands :uuidgen      => '/usr/bin/uuidgen'
+  commands :dsimport     => '/usr/bin/dsimport'
+  commands :dscl         => '/usr/bin/dscl'
+  commands :plutil       => '/usr/bin/plutil'
+  commands :dscacheutil  => '/usr/bin/dscacheutil'
+>>>>>>> f0067a6... Clear ds cache for password calls
 
   # Provider confines and defaults
   confine    :operatingsystem => :darwin
@@ -268,7 +276,31 @@ Puppet::Type.type(:user).provide :directoryservice do
            fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of 256 characters. Please check your password and try again.")
         end
       end
+
+      # Methods around setting the password on OS X are the ONLY methods that
+      # cannot use dscl (because the only way to set it via dscl is by passing
+      # a plaintext password - which is bad). Because of this, we have to change
+      # the user's plist directly. DSCL has its own caching mechanism, which
+      # means that every time we call dscl in this provider we're not directly
+      # changing values on disk (instead, those calls are cached and written
+      # to disk according to Apple's prioritization algorithms). When Puppet
+      # needs to set the password property on OS X > 10.6, the provider has to
+      # tell dscl to write its cache to disk before modifying the user's
+      # plist. The 'dscacheutil -flushcache' command does this. Another issue
+      # is how fast Puppet makes calls to dscl and how long it takes dscl to
+      # enter those calls into its cache. We have to sleep for 2 seconds before
+      # flushing the dscl cache to allow all dscl calls to get INTO the cache
+      # first. This could be made faster (and avoid a sleep call) by finding
+      # a way to enter calls into the dscl cache faster. A sleep time of 1
+      # second would intermittantly require a second Puppet run to set
+      # properties, so 2 seconds seems to be the minimum working value.
+      sleep 2
+      dscacheutil '-flushcache'
       write_password_to_users_plist(value)
+
+      # Since we just modified the user's plist, we need to flush the ds cache
+      # again so dscl can pick up on the changes we made.
+      dscacheutil '-flushcache'
     end
   end
 
@@ -284,10 +316,17 @@ Puppet::Type.type(:user).provide :directoryservice do
   end
 
   def iterations=(value)
+    # The iterations and salt properties, like the password property, can only
+    # be modified by directly changing the user's plist. Because of this fact,
+    # we have to treat the ds cache just like you would in the password=
+    # method.
     if (Puppet::Util::Package.versioncmp(Facter.value(:macosx_productversion_major), '10.7') > 0)
+      sleep 2
+      dscacheutil '-flushcache'
       users_plist = Plist::parse_xml(plutil '-convert', 'xml1', '-o', '/dev/stdout', "#{users_plist_dir}/#{@resource.name}.plist")
       shadow_hash_data = get_shadow_hash_data(users_plist)
       set_salted_pbkdf2(users_plist, shadow_hash_data, 'iterations', value)
+      dscacheutil '-flushcache'
     end
   end
 
@@ -303,10 +342,17 @@ Puppet::Type.type(:user).provide :directoryservice do
   end
 
   def salt=(value)
+    # The iterations and salt properties, like the password property, can only
+    # be modified by directly changing the user's plist. Because of this fact,
+    # we have to treat the ds cache just like you would in the password=
+    # method.
     if (Puppet::Util::Package.versioncmp(Facter.value(:macosx_productversion_major), '10.7') > 0)
+      sleep 2
+      dscacheutil '-flushcache'
       users_plist = Plist::parse_xml(plutil '-convert', 'xml1', '-o', '/dev/stdout', "#{users_plist_dir}/#{@resource.name}.plist")
       shadow_hash_data = get_shadow_hash_data(users_plist)
       set_salted_pbkdf2(users_plist, shadow_hash_data, 'salt', value)
+      dscacheutil '-flushcache'
     end
   end
 
@@ -519,9 +565,12 @@ Puppet::Type.type(:user).provide :directoryservice do
     # the plist to a binary format, and flush the dscl cache.
     Plist::Emit.save_plist(users_plist, "#{users_plist_dir}/#{@resource.name}.plist")
     plutil'-convert', 'binary1', "#{users_plist_dir}/#{@resource.name}.plist"
+<<<<<<< HEAD
     # Restart directoryservices or opendirectoryd
     # OR dscacheutil -cachedump
     # OR sleep 5
+=======
+>>>>>>> f0067a6... Clear ds cache for password calls
   end
 
   def write_sha1_hash(value)
