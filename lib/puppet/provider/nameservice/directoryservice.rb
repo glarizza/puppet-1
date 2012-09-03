@@ -20,8 +20,8 @@ class Puppet::Provider::NameService::DirectoryService < Puppet::Provider::NameSe
   commands :dseditgroup => "/usr/sbin/dseditgroup"
   commands :sw_vers => "/usr/bin/sw_vers"
   commands :plutil => '/usr/bin/plutil'
-  confine :operatingsystem => :gentoo
-  defaultfor :operatingsystem => :gentoo
+  confine :operatingsystem => :darwin
+  defaultfor :operatingsystem => :darwin
 
 
   # JJM 2007-07-25: This map is used to map NameService attributes to their

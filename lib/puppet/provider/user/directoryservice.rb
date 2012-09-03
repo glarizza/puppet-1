@@ -4,8 +4,8 @@ Puppet::Type.type(:user).provide :directoryservice, :parent => Puppet::Provider:
   desc "User management using DirectoryService on OS X."
 
   commands :dscl => "/usr/bin/dscl"
-  confine :operatingsystem => :gentoo
-  defaultfor :operatingsystem => :gentoo
+  confine :operatingsystem => :darwin
+  defaultfor :operatingsystem => :darwin
 
   # JJM: DirectoryService can manage passwords.
   #      This needs to be a special option to dscl though (-passwd)
