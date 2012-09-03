@@ -21,18 +21,11 @@ Puppet::Type.type(:user).provide :directoryservice do
 ##                   ##
 
   # Provider command declarations
-<<<<<<< HEAD
-  commands :uuidgen  => '/usr/bin/uuidgen'
-  commands :dsimport => '/usr/bin/dsimport'
-  commands :dscl     => '/usr/bin/dscl'
-  commands :plutil   => '/usr/bin/plutil'
-=======
   commands :uuidgen      => '/usr/bin/uuidgen'
   commands :dsimport     => '/usr/bin/dsimport'
   commands :dscl         => '/usr/bin/dscl'
   commands :plutil       => '/usr/bin/plutil'
   commands :dscacheutil  => '/usr/bin/dscacheutil'
->>>>>>> f0067a6... Clear ds cache for password calls
 
   # Provider confines and defaults
   confine    :operatingsystem => :darwin
@@ -565,12 +558,6 @@ Puppet::Type.type(:user).provide :directoryservice do
     # the plist to a binary format, and flush the dscl cache.
     Plist::Emit.save_plist(users_plist, "#{users_plist_dir}/#{@resource.name}.plist")
     plutil'-convert', 'binary1', "#{users_plist_dir}/#{@resource.name}.plist"
-<<<<<<< HEAD
-    # Restart directoryservices or opendirectoryd
-    # OR dscacheutil -cachedump
-    # OR sleep 5
-=======
->>>>>>> f0067a6... Clear ds cache for password calls
   end
 
   def write_sha1_hash(value)
