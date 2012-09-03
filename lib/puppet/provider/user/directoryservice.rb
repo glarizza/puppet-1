@@ -145,17 +145,37 @@ Puppet::Type.type(:user).provide :directoryservice do
     # method returns false. Dscl will directly set most values, but the
     # setter methods will be used for any exceptions.
     dscl '.', '-create',  "/Users/#{@resource.name}"
-    Puppet::Type.type(@resource.class.name).validproperties.each do |attribute|
+
+    # Generate a GUID for the new user
+    @guid = uuidgen
+
+    # Get an array of valid User type properties
+    valid_properties = Puppet::Type.type('User').validproperties
+
+    # GUID is not a valid user type property, but since we generated it
+    # and set it to be @guid, we need to set it with dscl. To do this,
+    # we add it to the array of valid User type properties.
+    valid_properties.unshift(:guid)
+
+    # Iterate through valid User type properties
+    valid_properties.each do |attribute|
       next if attribute == :ensure
       value = @resource.should(attribute)
 
       # Value defaults
       if value.nil?
+        value = @guid if attribute == :guid
         value = '20' if attribute == :gid
         value = next_system_id if attribute == :uid
         value = @resource.name if attribute == :comment
         value = '/bin/bash' if attribute == :shell
         value = "/Users/#{@resource.name}" if attribute == :home
+      end
+
+      # If a non-numerical gid value is passed, assume it is a group name and
+      # lookup that group's GID value to use when setting the GID
+      if (attribute == :gid) and (not(value =~ /^[-0-9]+$/))
+        value = Plist.parse_xml(dscl '-plist', '.', 'read', "/Groups/#{value}", 'PrimaryGroupID')['dsAttrTypeStandard:PrimaryGroupID'][0]
       end
 
       ## Set values ##
@@ -170,8 +190,17 @@ Puppet::Type.type(:user).provide :directoryservice do
           send('iterations=', value)
         when :salt
           send('salt=', value)
+        when :guid
+          # When you create a user with dscl, a GUID is auto-generated and set.
+          # Because we need the GUID to set the groups property, and we have a
+          # generated value stored in @guid, we will change the auto-generated
+          # value to the value stored in @guid
+          dscl '.', '-changei', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], '1', @guid
         when :groups
-          send('groups=', value)
+          value.split(',').each do |group|
+            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
+            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembers', @guid
+          end
         else
           begin
             dscl '.', '-merge', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], value
