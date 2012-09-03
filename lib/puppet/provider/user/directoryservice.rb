@@ -231,7 +231,11 @@ Puppet::Type.type(:user).provide :directoryservice do
     # Note that using this method misses nested group membership. It will only
     # report explicit group membership.
     groups_array = []
-    users_guid = get_attribute_from_dscl('Users', 'GeneratedUID')[0]
+    begin
+      users_guid = get_attribute_from_dscl('Users', 'GeneratedUID')[0]
+    rescue
+      return nil
+    end
 
     get_list_of_groups.each do |group|
       groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembership"] and group["dsAttrTypeStandard:GroupMembership"].include?(@resource.name)
