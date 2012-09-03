@@ -133,10 +133,11 @@ Puppet::Type.type(:user).provide :directoryservice do
     # the user exists. Rescue the dscl error if the user doesn't exist
     # and return false.
     begin
-      return true if dscl '.', 'read', "/Users/#{@resource.name}"
+      dscl '.', 'read', "/Users/#{@resource.name}"
     rescue
       return false
     end
+    true
   end
 
   def create
