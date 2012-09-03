@@ -1,4 +1,7 @@
 ## TODO LIST ##
+# * Fix self.instances and remove all getter methods
+# * Fix ds cache problems
+# * Check speed
 #1. Tests
 #2. Check individual getter/setter methods with Puppet manifests
 ##  - including home, gid, comment, and shell
@@ -10,7 +13,7 @@ require 'facter/util/plist'
 require 'pp'
 require 'base64'
 
-Puppet::Type.type(:user).provide :osx do
+Puppet::Type.type(:user).provide :directoryservice do
   desc "User management on OS X."
 
 ##                   ##
@@ -116,7 +119,7 @@ Puppet::Type.type(:user).provide :osx do
       attribute_hash[ds_to_ns_attribute_map[ds_attribute]] = ds_value
     end
     attribute_hash[:ensure] = :present
-    attribute_hash[:provider] = :osx
+    attribute_hash[:provider] = :directoryservice
     attribute_hash
   end
 
