@@ -36,21 +36,7 @@ Puppet::Type.type(:user).provide :directoryservice do
   mk_resource_methods
 
   # JJM: OS X can manage passwords.
-  #      This needs to be a special option to dscl though (-passwd)
   has_feature :manages_passwords
-
-  # JJM: comment matches up with the /etc/passwd concept of an user
-  #options :comment, :key => "realname"
-  #options :password, :key => "passwd"
-  #autogen_defaults :home => "/var/empty", :shell => "/usr/bin/false"
-
-  #verify :gid, "GID must be an integer" do |value|
-  #  value.is_a? Integer
-  #end
-
-  #verify :uid, "UID must be an integer" do |value|
-  #  value.is_a? Integer
-  #end
 
 ##                  ##
 ## Instance Methods ##
@@ -69,9 +55,6 @@ Puppet::Type.type(:user).provide :directoryservice do
       'RealName'         => :comment,
       'Password'         => :password,
       'GeneratedUID'     => :guid,
-      'IPAddress'        => :ip_address,
-      'ENetAddress'      => :en_address,
-      'GroupMembership'  => :members,
     }
   end
 
@@ -121,7 +104,110 @@ Puppet::Type.type(:user).provide :directoryservice do
     end
     attribute_hash[:ensure] = :present
     attribute_hash[:provider] = :directoryservice
+    attribute_hash[:shadowhashdata] = get_attribute_from_dscl('Users', attribute_hash[:name], 'ShadowHashData')
+
+    #####
+    # Get Groups
+    ####
+    groups_array = []
+    get_list_of_groups.each do |group|
+      groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembership"] and group["dsAttrTypeStandard:GroupMembership"].include?(attribute_hash[:name])
+      groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembers"] and group["dsAttrTypeStandard:GroupMembers"].include?(attribute_hash[:guid])
+    end
+    attribute_hash[:groups] = groups_array.uniq.sort.join(',')
+
+    #####
+    # Get Password/Salt/Iterations
+    #####
+    if (Puppet::Util::Package.versioncmp(Facter.value(:macosx_productversion_major), '10.7') == -1)
+      get_sha1(attribute_hash[:guid])
+    else
+      if attribute_hash[:shadowhashdata].empty?
+        attribute_hash[:password] = '*'
+      else
+        embedded_binary_plist = get_embedded_binary_plist(attribute_hash[:shadowhashdata])
+        if embedded_binary_plist['SALTED-SHA512']
+          attribute_hash[:password] = get_salted_sha512(embedded_binary_plist)
+        else
+          attribute_hash[:password]   = get_salted_sha512_pbkdf2('entropy', embedded_binary_plist)
+          attribute_hash[:salt]       = get_salted_sha512_pbkdf2('salt', embedded_binary_plist)
+          attribute_hash[:iterations] = get_salted_sha512_pbkdf2('iterations', embedded_binary_plist)
+        end
+      end
+    end
+
     attribute_hash
+  end
+
+  def self.get_list_of_groups
+    # Use dscl to retrieve an array of hashes containing attributes about all
+    # of the local groups on the machine.
+    @groups ||= Plist.parse_xml(dscl '-plist', '.', 'readall', '/Groups')
+  end
+
+  def self.get_attribute_from_dscl(path, username, keyname)
+    # Perform a dscl lookup at the path specified for the specific keyname
+    # value. The value returned is the first item within the array returned
+    # from dscl
+    Plist.parse_xml(dscl '-plist', '.', 'read', "/#{path}/#{username}", keyname)
+  end
+
+  def self.get_embedded_binary_plist(shadow_hash_data)
+    # The plist embedded in the ShadowHashData key is a binary plist. The
+    # facter/util/plist library doesn't read binary plists, so we need to
+    # extract the binary plist, convert it to XML, and return it.
+    embedded_binary_plist = Array(shadow_hash_data['dsAttrTypeNative:ShadowHashData'][0].delete(' ')).pack('H*')
+    convert_binary_to_xml(embedded_binary_plist)
+  end
+
+  def self.convert_xml_to_binary(plist_data)
+    # This method will accept a hash that has been returned from Plist::parse_xml
+    # and convert it to a binary plist (string value).
+    Puppet.debug('Converting XML plist to binary')
+    Puppet.debug('Executing: \'plutil -convert binary1 -o - -\'')
+    IO.popen('plutil -convert binary1 -o - -', mode='r+') do |io|
+      io.write Plist::Emit.dump(plist_data)
+      io.close_write
+      @converted_plist = io.read
+    end
+    @converted_plist
+  end
+
+  def self.convert_binary_to_xml(plist_data)
+    # This method will accept a binary plist (as a string) and convert it to a
+    # hash via Plist::parse_xml.
+    Puppet.debug('Converting binary plist to XML')
+    Puppet.debug('Executing: \'plutil -convert xml1 -o - -\'')
+    IO.popen('plutil -convert xml1 -o - -', mode='r+') do |io|
+      io.write plist_data
+      io.close_write
+      @converted_plist = io.read
+    end
+    Puppet.debug('Converting XML values to a hash.')
+    Plist::parse_xml(@converted_plist)
+  end
+
+  def self.get_salted_sha512(embedded_binary_plist)
+    # The salted-SHA512 password hash in 10.7 is stored in the 'SALTED-SHA512'
+    # key as binary data. That data is extracted and converted to a hex string.
+    embedded_binary_plist['SALTED-SHA512'].string.unpack("H*")[0]
+  end
+
+  def self.get_salted_sha512_pbkdf2(field, embedded_binary_plist)
+    # This method reads the passed embedded_binary_plist hash and returns values
+    # according to which field is passed.  Arguments passed are the hash
+    # containing the value read from the 'ShadowHashData' key in the User's
+    # plist, and the field to be read (one of 'entropy', 'salt', or 'iterations')
+    case field
+    when 'salt', 'entropy'
+      embedded_binary_plist['SALTED-SHA512-PBKDF2'][field].string.unpack('H*').first
+    when 'iterations'
+      Integer(embedded_binary_plist['SALTED-SHA512-PBKDF2'][field])
+    else
+      fail('Puppet has tried to read an incorrect value from the ' +
+           "SALTED-SHA512-PBKDF2 hash. Acceptable fields are 'salt', " +
+           "'entropy', or 'iterations'.")
+    end
   end
 
 ##                   ##
@@ -140,21 +226,41 @@ Puppet::Type.type(:user).provide :directoryservice do
   end
 
   def create
-    # This method is called if ensure => present is passed and the exists?
+  # This method is called if ensure => present is passed and the exists?
     # method returns false. Dscl will directly set most values, but the
     # setter methods will be used for any exceptions.
     dscl '.', '-create',  "/Users/#{@resource.name}"
-    Puppet::Type.type(@resource.class.name).validproperties.each do |attribute|
+
+    # Generate a GUID for the new user
+    @guid = uuidgen
+
+    # Get an array of valid User type properties
+    valid_properties = Puppet::Type.type('User').validproperties
+
+    # GUID is not a valid user type property, but since we generated it
+    # and set it to be @guid, we need to set it with dscl. To do this,
+    # we add it to the array of valid User type properties.
+    valid_properties.unshift(:guid)
+
+    # Iterate through valid User type properties
+    valid_properties.each do |attribute|
       next if attribute == :ensure
       value = @resource.should(attribute)
 
       # Value defaults
       if value.nil?
+        value = @guid if attribute == :guid
         value = '20' if attribute == :gid
         value = next_system_id if attribute == :uid
         value = @resource.name if attribute == :comment
         value = '/bin/bash' if attribute == :shell
         value = "/Users/#{@resource.name}" if attribute == :home
+      end
+
+      # If a non-numerical gid value is passed, assume it is a group name and
+      # lookup that group's GID value to use when setting the GID
+      if (attribute == :gid) and (not(value =~ /^[-0-9]+$/))
+        value = self.class.get_attribute_from_dscl('Groups', value, 'PrimaryGroupID')['dsAttrTypeStandard:PrimaryGroupID'][0]
       end
 
       ## Set values ##
@@ -169,8 +275,17 @@ Puppet::Type.type(:user).provide :directoryservice do
           send('iterations=', value)
         when :salt
           send('salt=', value)
+        when :guid
+          # When you create a user with dscl, a GUID is auto-generated and set.
+          # Because we need the GUID to set the groups property, and we have a
+          # generated value stored in @guid, we will change the auto-generated
+          # value to the value stored in @guid
+          dscl '.', '-changei', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], '1', @guid
         when :groups
-          send('groups=', value)
+          value.split(',').each do |group|
+            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
+            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembers', @guid
+          end
         else
           begin
             dscl '.', '-merge', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], value
@@ -213,7 +328,12 @@ Puppet::Type.type(:user).provide :directoryservice do
   def groups=(value)
     # In the setter method we're only going to take action on groups for which
     # the user is not currently a member.
-    groups_to_add = value.split(',') - groups.split(',')
+    if groups == :absent
+      groups_to_add = value.split(',')
+    else
+      groups_to_add = value.split(',') - groups.split(',')
+    end
+
     groups_to_add.each do |group|
       begin
         dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
@@ -349,11 +469,26 @@ Puppet::Type.type(:user).provide :directoryservice do
     end
   end
 
-  ['home', 'uid', 'gid', 'comment', 'shell'].each do |getter_method|
-    define_method(getter_method) do
-      ds_symbolized_value = self.class.ns_to_ds_attribute_map[getter_method.intern]
+  #####
+  # Dynamically create setter methods for dscl properties
+  #####
+  #
+  # Setter methods are only called when a resource currently has a value for
+  # that property and it needs changed (true here since all of these values
+  # have a default that is set in the create method). We don't want to merge
+  # in additional values if an incorrect value is set, we want to CHANGE it.
+  # When using the -change argument in dscl, the old value needs to be passed
+  # first (followed by the new value). Because of this, we get the current
+  # value from the @property_hash variable and then use the value passed as
+  # the new value. Because we're prefetching instances of the provider, it's
+  # possible that the value determined at the start of the run may be stale
+  # (i.e. someone changed the value by hand during a Puppet run) - if that's
+  # the case we rescue the error from dscl and alert the user.
+  ['home', 'uid', 'gid', 'comment', 'shell'].each do |setter_method|
+    define_method(setter_method) do
+      ds_symbolized_value = self.class.ns_to_ds_attribute_map[setter_method.intern]
       returnvalue = get_attribute_from_dscl('Users', ds_symbolized_value)
-      case getter_method
+      case setter_method
       when 'gid', 'uid'
         Integer(returnvalue["dsAttrTypeStandard:#{ds_symbolized_value}"][0])
       else
@@ -361,11 +496,16 @@ Puppet::Type.type(:user).provide :directoryservice do
       end
     end
 
-    define_method("#{getter_method}=") do |value|
-      dscl '-merge', "/Users/#{resource.name}", self.class.ns_to_ds_attribute_map[getter_method.intern], value
+    define_method("#{setter_method}=") do |value|
+      begin
+        current_value = self.class.get_attribute_from_dscl('Users', @resource.name, self.class.ns_to_ds_attribute_map[setter_method.intern])["dsAttrTypeStandard:#{self.class.ns_to_ds_attribute_map[setter_method.intern]}"][0]
+        dscl '.', '-change', "/Users/#{resource.name}", self.class.ns_to_ds_attribute_map[setter_method.intern], current_value, value
+      rescue => e
+        fail("Cannot set the #{setter_method} value of '#{value}' for user " +
+             "#{@resource.name} due to the following error: #{e.inspect}")
+      end
     end
   end
-
 
   ##                ##
   ## Helper Methods ##
