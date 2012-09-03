@@ -386,12 +386,15 @@ Puppet::Type.type(:user).provide :directoryservice do
   ['home', 'uid', 'gid', 'comment', 'shell'].each do |getter_method|
     define_method(getter_method) do
       ds_symbolized_value = self.class.ns_to_ds_attribute_map[getter_method.intern]
-      returnvalue = get_attribute_from_dscl('Users', ds_symbolized_value)
-      case getter_method
-      when 'gid', 'uid'
-        Integer(returnvalue["dsAttrTypeStandard:#{ds_symbolized_value}"][0])
+      attribute_value = get_attribute_from_dscl('Users', ds_symbolized_value)
+      if attribute_value["dsAttrTypeStandard:#{ds_symbolized_value}"]
+        value = attribute_value["dsAttrTypeStandard:#{ds_symbolized_value}"][0]
+        if getter_method == ('gid' or 'uid')
+          value = Integer(value)
+        end
+        value
       else
-        returnvalue["dsAttrTypeStandard:#{ds_symbolized_value}"][0]
+        nil
       end
     end
 
