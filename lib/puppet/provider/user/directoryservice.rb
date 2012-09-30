@@ -37,9 +37,9 @@ Puppet::Type.type(:user).provide :directoryservice do
   # JJM: OS X can manage passwords.
   has_feature :manages_passwords
 
-##                  ##
+##               ##
 ## Class Methods ##
-##                  ##
+##               ##
 
   def self.ds_to_ns_attribute_map
     # This method exists to map the dscl values to the correct Puppet
@@ -119,9 +119,9 @@ Puppet::Type.type(:user).provide :directoryservice do
     attribute_hash[:provider]       = :directoryservice
     attribute_hash[:shadowhashdata] = get_attribute_from_dscl('Users', attribute_hash[:name], 'ShadowHashData')
 
-    #####
-    # Get Groups
-    ####
+    ##############
+    # Get Groups #
+    ##############
     groups_array = []
     get_list_of_groups.each do |group|
       groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembership"] and group["dsAttrTypeStandard:GroupMembership"].include?(attribute_hash[:name])
@@ -129,9 +129,9 @@ Puppet::Type.type(:user).provide :directoryservice do
     end
     attribute_hash[:groups] = groups_array.uniq.sort.join(',')
 
-    #####
-    # Get Password/Salt/Iterations
-    #####
+    ################################
+    # Get Password/Salt/Iterations #
+    ################################
     if (Puppet::Util::Package.versioncmp(Facter.value(:macosx_productversion_major), '10.7') == -1)
       get_sha1(attribute_hash[:guid])
     else
