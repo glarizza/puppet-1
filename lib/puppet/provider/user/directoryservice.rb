@@ -578,7 +578,7 @@ Puppet::Type.type(:user).provide :directoryservice do
 
   def write_sha1_hash(value)
     users_guid = @property_hash[:guid]
-    password_hash_file = "#{password_hash_dir}/#{users_guid}"
+    password_hash_file = "#{self.class.password_hash_dir}/#{users_guid}"
     begin
       File.open(password_hash_file, 'w') { |f| f.write(value)}
     rescue Errno::EACCES => detail
