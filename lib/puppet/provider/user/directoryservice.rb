@@ -146,7 +146,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     # Get Password/Salt/Iterations #
     ################################
     if (Puppet::Util::Package.versioncmp(Facter.value(:macosx_productversion_major), '10.7') == -1)
-      get_sha1(attribute_hash[:guid])
+      attribute_hash[:password] = get_sha1(attribute_hash[:guid])
     else
       if attribute_hash[:shadowhashdata].empty?
         attribute_hash[:password] = '*'
