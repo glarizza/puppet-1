@@ -230,9 +230,9 @@ Puppet::Type.type(:user).provide :directoryservice do
     when 'iterations'
       Integer(embedded_binary_plist['SALTED-SHA512-PBKDF2'][field])
     else
-      fail('Puppet has tried to read an incorrect value from the ' +
+      raise Puppet::Error, 'Puppet has tried to read an incorrect value from the ' +
            "SALTED-SHA512-PBKDF2 hash. Acceptable fields are 'salt', " +
-           "'entropy', or 'iterations'.")
+           "'entropy', or 'iterations'."
     end
   end
 
@@ -313,7 +313,7 @@ Puppet::Type.type(:user).provide :directoryservice do
           begin
             dscl '.', '-merge', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], value
           rescue Puppet::ExecutionFailure => detail
-            fail("Could not create #{@resource.class.name} #{@resource.name}: #{detail}")
+            raise Puppet::Error, "Could not create #{@resource.class.name} #{@resource.name}: #{detail}"
           end
         end
       end
@@ -338,8 +338,8 @@ Puppet::Type.type(:user).provide :directoryservice do
       begin
         dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
         dscl '.', '-merge', "/Groups/#{group}", 'GroupMembers', @property_hash[:guid]
-      rescue
-        fail("OS X Provider: Unable to add #{@resource.name} to #{group}")
+      rescue Puppet::ExecutionFailure => e
+        raise Puppet::Error, "OS X Provider: Unable to add #{@resource.name} to #{group}: #{e.inspect}"
       end
     end
   end
@@ -360,11 +360,11 @@ Puppet::Type.type(:user).provide :directoryservice do
     else
       if Facter.value(:macosx_productversion_major) == '10.7'
         if value.length != 136
-          fail("OS X 10.7 requires a Salted SHA512 hash password of 136 characters.  Please check your password and try again.")
+          raise Puppet::Error, "OS X 10.7 requires a Salted SHA512 hash password of 136 characters.  Please check your password and try again."
         end
       else
         if value.length != 256
-           fail("OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of 256 characters. Please check your password and try again.")
+           raise Puppet::Error, "OS X versions > 10.7 require a Salted SHA512 PBKDF2 password hash of 256 characters. Please check your password and try again."
         end
       end
 
@@ -444,9 +444,9 @@ Puppet::Type.type(:user).provide :directoryservice do
     define_method("#{setter_method}=") do |value|
       begin
         dscl '.', '-change', "/Users/#{resource.name}", self.class.ns_to_ds_attribute_map[setter_method.intern], @property_hash[setter_method.intern], value
-      rescue => e
-        fail("Cannot set the #{setter_method} value of '#{value}' for user " +
-             "#{@resource.name} due to the following error: #{e.inspect}")
+      rescue Puppet::ExecutionFailure => e
+        raise Puppet::Error, "Cannot set the #{setter_method} value of '#{value}' for user " +
+             "#{@resource.name} due to the following error: #{e.inspect}"
       end
     end
   end
@@ -553,7 +553,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     when 'iterations'
       shadow_hash_data['SALTED-SHA512-PBKDF2'][field] = Integer(value)
     else
-      fail("Puppet has tried to set an incorrect field for the 'SALTED-SHA512-PBKDF2' hash. Acceptable fields are 'salt', 'entropy', or 'iterations'.")
+      raise Puppet::Error "Puppet has tried to set an incorrect field for the 'SALTED-SHA512-PBKDF2' hash. Acceptable fields are 'salt', 'entropy', or 'iterations'."
     end
 
     # on 10.8, this field *must* contain 8 stars, or authentication will
@@ -580,7 +580,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     begin
       File.open(password_hash_file, 'w') { |f| f.write(value)}
     rescue Errno::EACCES => detail
-      fail("Could not write to password hash file: #{detail}")
+      raise Puppet::Error, "Could not write to password hash file: #{detail}"
     end
 
     # NBK: For shadow hashes, the user AuthenticationAuthority must contain a value of
@@ -600,7 +600,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     begin
       dscl '.', '-merge',  "/Users/#{@resource.name}", 'AuthenticationAuthority', ';ShadowHash;'
     rescue Puppet::ExecutionFailure
-      fail('Could not set AuthenticationAuthority to ;ShadowHash;')
+      raise Puppet::Error, 'Could not set AuthenticationAuthority to ;ShadowHash;'
     end
   end
 end
