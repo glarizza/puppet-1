@@ -64,9 +64,16 @@ Puppet::Type.type(:user).provide :directoryservice do
     @ns_to_ds_attribute_map ||= ds_to_ns_attribute_map.invert
   end
 
-  #  Prefetching is necessary to use @property_hash inside any setter methods
-  #  Of course, it takes forever to prefetch resources...
   def self.prefetch(resources)
+    # Prefetching is necessary to use @property_hash inside any setter methods.
+    # self.prefetch uses self.instances to gather an array of user instances
+    # on the system, and then populates the @property_hash instance variable
+    # with attribute data for the specific instance in question (i.e. it
+    # gathers the 'is' values of the resource into the @property_hash instance
+    # variable so you don't have to read from the system every time you need
+    # to gather the 'is' values for a resource. The downside here is that
+    # populating this instance variable for every resource on the system
+    # takes time and front-loads your Puppet run.
     instances.each do |prov|
       if resource = resources[prov.name]
         resource.provider = prov
@@ -74,11 +81,12 @@ Puppet::Type.type(:user).provide :directoryservice do
     end
   end
 
-  # self.instances is necessary for Puppet Resource...I believe
   def self.instances
     # This method assembles an array of provider instances containing
     # information about every instance of the user type on the system (i.e.
-    # every user and its attributes).
+    # every user and its attributes). The `puppet resource` command relies
+    # on self.instances to gather an array of user instances in order to
+    # display its output.
     get_all_users.collect do |user|
       self.new(generate_attribute_hash(user))
     end
