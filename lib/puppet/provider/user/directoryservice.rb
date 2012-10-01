@@ -132,8 +132,13 @@ Puppet::Type.type(:user).provide :directoryservice do
     ##############
     groups_array = []
     get_list_of_groups.each do |group|
-      groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembership"] and group["dsAttrTypeStandard:GroupMembership"].include?(attribute_hash[:name])
-      groups_array << group["dsAttrTypeStandard:RecordName"][0] if group["dsAttrTypeStandard:GroupMembers"] and group["dsAttrTypeStandard:GroupMembers"].include?(attribute_hash[:guid])
+      if group["dsAttrTypeStandard:GroupMembership"] and group["dsAttrTypeStandard:GroupMembership"].include?(attribute_hash[:name])
+        groups_array << group["dsAttrTypeStandard:RecordName"][0]
+      end
+
+      if group["dsAttrTypeStandard:GroupMembers"] and group["dsAttrTypeStandard:GroupMembers"].include?(attribute_hash[:guid])
+        groups_array << group["dsAttrTypeStandard:RecordName"][0]
+      end
     end
     attribute_hash[:groups] = groups_array.uniq.sort.join(',')
 
