@@ -256,10 +256,12 @@ Puppet::Type.type(:user).provide :directoryservice do
 
   def exists?
     begin
-      return true if dscl '.', 'read', "/Users/#{@resource.name}"
-    rescue
+      dscl '.', 'read', "/Users/#{@resource.name}"
+    rescue Puppet::ExecutionFailure => e
+      Puppet.debug("User was not found, dscl returned: #{e.inspect}")
       return false
     end
+    true
   end
 
   def create
