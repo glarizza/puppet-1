@@ -476,7 +476,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     '/var/db/dslocal/nodes/Default/users'
   end
 
-  def password_hash_dir
+  def self.password_hash_dir
     '/var/db/shadow/hash'
   end
 
