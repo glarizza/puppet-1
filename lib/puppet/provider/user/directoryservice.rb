@@ -236,6 +236,20 @@ Puppet::Type.type(:user).provide :directoryservice do
     end
   end
 
+  def self.get_sha1(guid)
+    # In versions 10.5 and 10.6 of OS X, the password hash is stored in a file
+    # in the /var/db/shadow/hash directory that matches the GUID of the user.
+    password_hash = nil
+    password_hash_file = "#{password_hash_dir}/#{guid}"
+    if File.exists?(password_hash_file) and File.file?(password_hash_file)
+      raise Puppet::Error, "Could not read password hash file at #{password_hash_file}" if not File.readable?(password_hash_file)
+      f = File.new(password_hash_file)
+      password_hash = f.read
+      f.close
+    end
+    password_hash
+  end
+
 ##                   ##
 ## Ensurable Methods ##
 ##                   ##
@@ -476,20 +490,6 @@ Puppet::Type.type(:user).provide :directoryservice do
       next_id = ids[i] + 1
       return next_id if ids[i+1] != next_id and next_id >= min_id
     end
-  end
-
-  def get_sha1(guid)
-    # In versions 10.5 and 10.6 of OS X, the password hash is stored in a file
-    # in the /var/db/shadow/hash directory that matches the GUID of the user.
-    password_hash = nil
-    password_hash_file = "#{password_hash_dir}/#{guid}"
-    if File.exists?(password_hash_file) and File.file?(password_hash_file)
-      fail("Could not read password hash file at #{password_hash_file}") if not File.readable?(password_hash_file)
-      f = File.new(password_hash_file)
-      password_hash = f.read
-      f.close
-    end
-    password_hash
   end
 
   def write_password_to_users_plist(value)
