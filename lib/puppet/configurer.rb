@@ -3,13 +3,11 @@ require 'sync'
 require 'timeout'
 require 'puppet/network/http_pool'
 require 'puppet/util'
-require 'puppet/util/config_timeout'
 
 class Puppet::Configurer
   require 'puppet/configurer/fact_handler'
   require 'puppet/configurer/plugin_handler'
 
-  extend Puppet::Util::ConfigTimeout
   include Puppet::Configurer::FactHandler
   include Puppet::Configurer::PluginHandler
 
@@ -142,12 +140,18 @@ class Puppet::Configurer
         fact_options = get_facts(options)
       end
 
-      if node = Puppet::Node.indirection.find(Puppet[:node_name_value], :environment => @environment, :ignore_cache => true)
-        if node.environment.to_s != @environment
-          Puppet.warning "Local environment: \"#{@environment}\" doesn't match server specified node environment \"#{node.environment}\", switching agent to \"#{node.environment}\"."
-          @environment = node.environment.to_s
-          fact_options = nil
+      begin
+        if node = Puppet::Node.indirection.find(Puppet[:node_name_value],
+            :environment => @environment, :ignore_cache => true)
+          if node.environment.to_s != @environment
+            Puppet.warning "Local environment: \"#{@environment}\" doesn't match server specified node environment \"#{node.environment}\", switching agent to \"#{node.environment}\"."
+            @environment = node.environment.to_s
+            fact_options = nil
+          end
         end
+      rescue Puppet::Error, Net::HTTPError => detail
+        Puppet.warning("Unable to fetch my node definition, but the agent run will continue:")
+        Puppet.warning(detail)
       end
 
       fact_options = get_facts(options) unless fact_options

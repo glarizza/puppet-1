@@ -1,4 +1,4 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 require 'puppet/parser/files'
@@ -156,6 +156,9 @@ describe Puppet::Parser::Files do
     it "should match against provided fully qualified patterns" do
       pattern = @basepath + "/fully/qualified/pattern/*"
       Dir.expects(:glob).with(pattern+'{.pp,.rb}').returns(%w{my file list})
+      ['my', 'file','list'].each do |w|
+        FileTest.expects(:'directory?').with(w).returns false
+      end
       Puppet::Parser::Files.find_manifests(pattern)[1].should == %w{my file list}
     end
 

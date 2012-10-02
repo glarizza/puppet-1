@@ -1,4 +1,4 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 describe Puppet::Type.type(:exec) do
@@ -280,7 +280,7 @@ describe Puppet::Type.type(:exec) do
 
         it "should fail if the provider calls the command invalid" do
           expect { test(command, false) }.
-            to raise_error Puppet::Error, /Parameter #{@param} failed: from a stub/
+            to raise_error Puppet::Error, /Parameter #{@param} failed on Exec\[.*\]: from a stub/
         end
       end
     end

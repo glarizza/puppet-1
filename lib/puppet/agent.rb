@@ -27,7 +27,7 @@ class Puppet::Agent
   # Perform a run with our client.
   def run(client_options = {})
     if running?
-      Puppet.notice "Run of #{client_class} already in progress; skipping"
+      Puppet.notice "Run of #{client_class} already in progress; skipping  (#{lockfile_path} exists)"
       return
     end
     if disabled?
@@ -70,7 +70,7 @@ class Puppet::Agent
     return unless Puppet[:splay]
     return if splayed?
 
-    time = rand(Integer(Puppet[:splaylimit]) + 1)
+    time = rand(Puppet[:splaylimit] + 1)
     Puppet.info "Sleeping for #{time} seconds (splay is enabled)"
     sleep(time)
     @splayed = true

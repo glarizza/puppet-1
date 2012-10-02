@@ -7,7 +7,6 @@ rescue LoadError
 end
 
 # see the bottom of the file for further inclusions
-require 'singleton'
 require 'facter'
 require 'puppet/error'
 require 'puppet/util'
@@ -95,7 +94,7 @@ module Puppet
     # (rather than using a global variable, as we did previously...).  Would be good to revisit this at some point.
     #
     # --cprice 2012-03-16
-    Puppet::Util::RunMode[@@settings.run_mode]
+    Puppet::Util::RunMode[@@settings.preferred_run_mode]
   end
 
   # Load all of the configuration parameters.

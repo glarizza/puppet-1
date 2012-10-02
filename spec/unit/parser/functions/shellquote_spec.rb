@@ -1,11 +1,7 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 describe "the shellquote function" do
-  before :all do
-    Puppet::Parser::Functions.autoloader.loadall
-  end
-
   let :node     do Puppet::Node.new('localhost') end
   let :compiler do Puppet::Parser::Compiler.new(node) end
   let :scope    do Puppet::Parser::Scope.new(compiler) end

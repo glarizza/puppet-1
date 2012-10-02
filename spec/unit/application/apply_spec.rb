@@ -1,4 +1,4 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 require 'puppet/application/apply'
@@ -103,7 +103,7 @@ describe Puppet::Application::Apply do
     end
 
     it "should set default_file_terminus to `file_server` to be local" do
-      @apply.app_defaults[:default_file_terminus].should == 'file_server'
+      @apply.app_defaults[:default_file_terminus].should == :file_server
     end
   end
 

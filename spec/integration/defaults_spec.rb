@@ -1,4 +1,4 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 require 'puppet/defaults'
@@ -107,22 +107,29 @@ describe "Puppet defaults" do
     Puppet.settings.setting(:hostcert).owner.should == Puppet.settings[:user]
   end
 
-  it "should use a bind address of ''" do
-    Puppet.settings.clear
-    Puppet.settings[:bindaddress].should == ""
-  end
-
   [:modulepath, :factpath].each do |setting|
     it "should configure '#{setting}' not to be a file setting, so multi-directory settings are acceptable" do
       Puppet.settings.setting(setting).should be_instance_of(Puppet::Settings::PathSetting)
     end
   end
 
-  it "should add /usr/sbin and /sbin to the path if they're not there" do
-    Puppet::Util.withenv("PATH" => "/usr/bin:/usr/local/bin") do
-      Puppet.settings[:path] = "none" # this causes it to ignore the setting
-      ENV["PATH"].split(File::PATH_SEPARATOR).should be_include("/usr/sbin")
-      ENV["PATH"].split(File::PATH_SEPARATOR).should be_include("/sbin")
+  describe "on a Unix-like platform it", :as_platform => :posix do
+    it "should add /usr/sbin and /sbin to the path if they're not there" do
+      Puppet::Util.withenv("PATH" => "/usr/bin#{File::PATH_SEPARATOR}/usr/local/bin") do
+        Puppet.settings[:path] = "none" # this causes it to ignore the setting
+        ENV["PATH"].split(File::PATH_SEPARATOR).should be_include("/usr/sbin")
+        ENV["PATH"].split(File::PATH_SEPARATOR).should be_include("/sbin")
+      end
+    end
+  end
+
+  describe "on a Windows-like platform it", :as_platform => :windows do
+    it "should not add anything" do
+      path = "c:\\windows\\system32#{File::PATH_SEPARATOR}c:\\windows"
+      Puppet::Util.withenv("PATH" => path) do
+        Puppet.settings[:path] = "none" # this causes it to ignore the setting
+        ENV["PATH"].should == path
+      end
     end
   end
 
@@ -300,7 +307,14 @@ describe "Puppet defaults" do
     end
 
     it "should be set to hiera by default" do
-      Puppet.settings[:data_binding_terminus].should == 'hiera'
+      Puppet.settings[:data_binding_terminus].should == :hiera
+    end
+  end
+
+  describe "agent_catalog_run_lockfile" do
+    it "(#2888) is not a file setting so it is absent from the Settings catalog" do
+      Puppet.settings.setting(:agent_catalog_run_lockfile).should_not be_a_kind_of Puppet::Settings::FileSetting
+      Puppet.settings.setting(:agent_catalog_run_lockfile).should be_a Puppet::Settings::StringSetting
     end
   end
 end

@@ -36,7 +36,7 @@ class Puppet::Application::Kick < Puppet::Application
   end
 
   def help
-    <<-HELP
+    <<-'HELP'
 
 puppet-kick(8) -- Remotely control puppet agent
 ========
@@ -298,7 +298,9 @@ Copyright (c) 2011 Puppet Labs, LLC Licensed under the Apache 2.0 License
   end
 
   def setup
+    super()
     raise Puppet::Error.new("Puppet kick is not supported on Microsoft Windows") if Puppet.features.microsoft_windows?
+    Puppet.warning "Puppet kick is deprecated. See http://links.puppetlabs.com/puppet-kick-deprecation"
 
     if options[:debug]
       Puppet::Util::Log.level = :debug
@@ -306,7 +308,7 @@ Copyright (c) 2011 Puppet Labs, LLC Licensed under the Apache 2.0 License
       Puppet::Util::Log.level = :info
     end
 
-    if Puppet[:node_terminus] == "ldap" and (options[:all] or @classes)
+    if Puppet[:node_terminus] == :ldap and (options[:all] or @classes)
       if options[:all]
         @hosts = Puppet::Node.indirection.search("whatever", :fqdn => options[:fqdn]).collect { |node| node.name }
         puts "all: #{@hosts.join(", ")}"

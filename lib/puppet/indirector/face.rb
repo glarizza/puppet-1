@@ -51,11 +51,11 @@ class Puppet::Indirector::Face < Puppet::Face
 
   option "--extra HASH" do
     summary "Extra arguments to pass to the indirection request"
-    description <<-end
+    description <<-EOT
       A terminus can take additional arguments to refine the operation, which
       are passed as an arbitrary hash to the back-end.  Anything passed as
       the extra value is just send direct to the back-end.
-    end
+    EOT
     default_to do Hash.new end
   end
 
@@ -94,7 +94,7 @@ class Puppet::Indirector::Face < Puppet::Face
     description <<-EOT
       Prints the default terminus class for this subcommand. Note that different
       run modes may have different default termini; when in doubt, specify the
-      run mode with the '--mode' option.
+      run mode with the '--run_mode' option.
     EOT
 
     when_invoked do |options|

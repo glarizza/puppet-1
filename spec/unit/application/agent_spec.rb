@@ -1,4 +1,4 @@
-#! /usr/bin/env ruby -S rspec
+#! /usr/bin/env ruby
 require 'spec_helper'
 
 require 'puppet/agent'
@@ -70,10 +70,10 @@ describe Puppet::Application::Agent do
       @puppetd.options[:serve].should == []
     end
 
-    it "should use MD5 as default digest algorithm" do
+    it "should use SHA256 as default digest algorithm" do
       @puppetd.preinit
 
-      @puppetd.options[:digest].should == :MD5
+      @puppetd.options[:digest].should == 'SHA256'
     end
 
     it "should not fingerprint by default" do
@@ -337,9 +337,26 @@ describe Puppet::Application::Agent do
       Puppet[:node_terminus].should ==  :rest
     end
 
-    it "should tell the catalog handler to use cache" do
+    it "has an application default :catalog_cache_terminus setting of 'json'" do
+      Puppet::Resource::Catalog.indirection.expects(:cache_class=).with(:json)
+
+      @puppetd.initialize_app_defaults
+      @puppetd.setup
+    end
+
+    it "should tell the catalog cache class based on the :catalog_cache_terminus setting" do
+      Puppet[:catalog_cache_terminus] = "yaml"
       Puppet::Resource::Catalog.indirection.expects(:cache_class=).with(:yaml)
 
+      @puppetd.initialize_app_defaults
+      @puppetd.setup
+    end
+
+    it "should not set catalog cache class if :catalog_cache_terminus is explicitly nil" do
+      Puppet[:catalog_cache_terminus] = nil
+      Puppet::Resource::Catalog.indirection.expects(:cache_class=).never
+
+      @puppetd.initialize_app_defaults
       @puppetd.setup
     end
 
@@ -456,8 +473,13 @@ describe Puppet::Application::Agent do
       it "should use puppet default port" do
         Puppet[:puppetport] = 32768
 
-        Puppet::Network::Server.expects(:new).with { |args| args[:port] == 32768 }
+        Puppet::Network::Server.expects(:new).with(anything, 32768)
 
+        @puppetd.setup_listen
+      end
+      
+      it "should issue a warning that listen is deprecated" do
+        Puppet.expects(:warning).with() { |msg| msg =~ /kick is deprecated/ }
         @puppetd.setup_listen
       end
     end
@@ -589,20 +611,20 @@ describe Puppet::Application::Agent do
 
       it "should fingerprint the certificate if it exists" do
         @host.expects(:certificate).returns(@cert)
-        @cert.expects(:fingerprint).with(:MD5).returns "fingerprint"
+        @cert.expects(:digest).with('MD5').returns "fingerprint"
         @puppetd.fingerprint
       end
 
       it "should fingerprint the certificate request if no certificate have been signed" do
         @host.expects(:certificate).returns(nil)
         @host.expects(:certificate_request).returns(@cert)
-        @cert.expects(:fingerprint).with(:MD5).returns "fingerprint"
+        @cert.expects(:digest).with('MD5').returns "fingerprint"
         @puppetd.fingerprint
       end
 
       it "should display the fingerprint" do
         @host.stubs(:certificate).returns(@cert)
-        @cert.stubs(:fingerprint).with(:MD5).returns("DIGEST")
+        @cert.stubs(:digest).with('MD5').returns("DIGEST")
 
         @puppetd.expects(:puts).with "DIGEST"
 

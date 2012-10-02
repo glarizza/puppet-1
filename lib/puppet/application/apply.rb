@@ -31,7 +31,7 @@ class Puppet::Application::Apply < Puppet::Application
   end
 
   def help
-    <<-HELP
+    <<-'HELP'
 
 puppet-apply(8) -- Apply Puppet manifests locally
 ========
@@ -135,7 +135,7 @@ Copyright (c) 2011 Puppet Labs, LLC Licensed under the Apache 2.0 License
 
   def app_defaults
     super.merge({
-      :default_file_terminus => "file_server",
+      :default_file_terminus => :file_server,
     })
   end
 
