@@ -308,17 +308,11 @@ Puppet::Type.type(:user).provide :directoryservice do
       if value != "" and not value.nil?
         case attribute
         when :password
-          send('password=', value)
+          self.password = value
         when :iterations
-          send('iterations=', value)
+          self.iterations = value
         when :salt
-          send('salt=', value)
-        when :guid
-          # When you create a user with dscl, a GUID is auto-generated and set.
-          # Because we need the GUID to set the groups property, and we have a
-          # generated value stored in @guid, we will change the auto-generated
-          # value to the value stored in @guid
-          dscl '.', '-changei', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], '1', @guid
+          self.salt = value
         when :groups
           value.split(',').each do |group|
             dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
