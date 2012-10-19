@@ -261,16 +261,11 @@ Puppet::Type.type(:user).provide :directoryservice do
     # setter methods will be used for any exceptions.
     create_new_user(@resource.name)
 
-    # Generate a GUID for the new user
-    @guid = uuidgen
+    # Retrieve the user's GUID
+    @guid = self.class.get_attribute_from_dscl('Users', @resource.name, 'GeneratedUID')['dsAttrTypeStandard:GeneratedUID'][0]
 
     # Get an array of valid User type properties
     valid_properties = Puppet::Type.type('User').validproperties
-
-    # GUID is not a valid user type property, but since we generated it
-    # and set it to be @guid, we need to set it with dscl. To do this,
-    # we add it to the array of valid User type properties.
-    valid_properties.unshift(:guid)
 
     # Iterate through valid User type properties
     valid_properties.each do |attribute|
@@ -315,15 +310,11 @@ Puppet::Type.type(:user).provide :directoryservice do
           self.salt = value
         when :groups
           value.split(',').each do |group|
-            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
-            dscl '.', '-merge', "/Groups/#{group}", 'GroupMembers', @guid
+            merge_attribute_with_dscl('Groups', group, 'GroupMembership', @resource.name)
+            merge_attribute_with_dscl('Groups', group, 'GroupMembers', @guid)
           end
         else
-          begin
-            dscl '.', '-merge', "/Users/#{@resource.name}", self.class.ns_to_ds_attribute_map[attribute], value
-          rescue Puppet::ExecutionFailure => detail
-            raise Puppet::Error, "Could not create #{@resource.class.name} #{@resource.name}: #{detail}"
-          end
+          merge_attribute_with_dscl('Users', @resource.name, self.class.ns_to_ds_attribute_map[attribute], value)
         end
       end
     end
@@ -342,14 +333,11 @@ Puppet::Type.type(:user).provide :directoryservice do
   def groups=(value)
     # In the setter method we're only going to take action on groups for which
     # the user is not currently a member.
+    guid = self.class.get_attribute_from_dscl('Users', @resource.name, 'GeneratedUID')['dsAttrTypeStandard:GeneratedUID'][0]
     groups_to_add = value.split(',') - groups.split(',')
     groups_to_add.each do |group|
-      begin
-        dscl '.', '-merge', "/Groups/#{group}", 'GroupMembership', @resource.name
-        dscl '.', '-merge', "/Groups/#{group}", 'GroupMembers', @property_hash[:guid]
-      rescue Puppet::ExecutionFailure => e
-        raise Puppet::Error, "OS X Provider: Unable to add #{@resource.name} to #{group}: #{e.inspect}"
-      end
+      merge_attribute_with_dscl('Groups', group, 'GroupMembership', @resource.name)
+      merge_attribute_with_dscl('Groups', group, 'GroupMembers', guid)
     end
   end
 
@@ -471,6 +459,15 @@ Puppet::Type.type(:user).provide :directoryservice do
 
   def self.password_hash_dir
     '/var/db/shadow/hash'
+  end
+
+  def merge_attribute_with_dscl(path, username, keyname, value)
+    # This method will merge in a given value using dscl
+    begin
+      dscl '.', '-merge', "/#{path}/#{username}", keyname, value
+    rescue Puppet::ExecutionFailure => detail
+      raise Puppet::Error, "Could not set the dscl #{keyname} key with value: #{value} - #{detail.inspect}"
+    end
   end
 
   def create_new_user(username)
@@ -602,10 +599,6 @@ Puppet::Type.type(:user).provide :directoryservice do
     # see a simple enough solution for this that doesn't modify the user record
     # every single time. This should be a rather rare edge case. (famous last words)
 
-    begin
-      dscl '.', '-merge',  "/Users/#{@resource.name}", 'AuthenticationAuthority', ';ShadowHash;'
-    rescue Puppet::ExecutionFailure
-      raise Puppet::Error, 'Could not set AuthenticationAuthority to ;ShadowHash;'
-    end
+    merge_attribute_with_dscl('Users', @resource.name, 'AuthenticationAuthority', ';ShadowHash;')
   end
 end
