@@ -259,7 +259,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     # This method is called if ensure => present is passed and the exists?
     # method returns false. Dscl will directly set most values, but the
     # setter methods will be used for any exceptions.
-    dscl '.', '-create',  "/Users/#{@resource.name}"
+    create_new_user(@resource.name)
 
     # Generate a GUID for the new user
     @guid = uuidgen
@@ -477,6 +477,11 @@ Puppet::Type.type(:user).provide :directoryservice do
 
   def self.password_hash_dir
     '/var/db/shadow/hash'
+  end
+
+  def create_new_user(username)
+    # Create the new user with dscl
+    dscl '.', '-create',  "/Users/#{username}"
   end
 
   def next_system_id(min_id=20)
