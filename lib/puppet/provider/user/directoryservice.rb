@@ -240,6 +240,7 @@ Puppet::Type.type(:user).provide :directoryservice do
     password_hash
   end
 
+
 ##                   ##
 ## Ensurable Methods ##
 ##                   ##
