@@ -279,12 +279,20 @@ Puppet::Type.type(:user).provide :directoryservice do
 
       # Value defaults
       if value.nil?
-        value = @guid if attribute == :guid
-        value = '20' if attribute == :gid
-        value = next_system_id if attribute == :uid
-        value = @resource.name if attribute == :comment
-        value = '/bin/bash' if attribute == :shell
-        value = "/Users/#{@resource.name}" if attribute == :home
+        value = case attribute
+                when :gid
+                  '20'
+                when :uid
+                  next_system_id
+                when :comment
+                  @resource.name
+                when :shell
+                  '/bin/bash'
+                when :home
+                  "/Users/#{@resource.name}"
+                else
+                  nil
+                end
       end
 
       # If a non-numerical gid value is passed, assume it is a group name and
