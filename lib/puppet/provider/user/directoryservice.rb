@@ -575,14 +575,19 @@ Puppet::Type.type(:user).provide :directoryservice do
     plutil'-convert', 'binary1', "#{users_plist_dir}/#{@resource.name}.plist"
   end
 
-  def write_sha1_hash(value)
-    users_guid = @property_hash[:guid]
-    password_hash_file = "#{self.class.password_hash_dir}/#{users_guid}"
+  def write_to_file(filename, value)
+    # This is a simple wrapper method for writing values to a file.
     begin
-      File.open(password_hash_file, 'w') { |f| f.write(value)}
+      File.open(filename, 'w') { |f| f.write(value)}
     rescue Errno::EACCES => detail
-      raise Puppet::Error, "Could not write to password hash file: #{detail}"
+      raise Puppet::Error, "Could not write to file #{filename}: #{detail}"
     end
+  end
+
+  def write_sha1_hash(value)
+    users_guid = self.class.get_attribute_from_dscl('Users', @resource.name, 'GeneratedUID')['dsAttrTypeStandard:GeneratedUID'][0]
+    password_hash_file = "#{self.class.password_hash_dir}/#{users_guid}"
+    write_to_file(password_hash_file, value)
 
     # NBK: For shadow hashes, the user AuthenticationAuthority must contain a value of
     # ";ShadowHash;". The LKDC in 10.5 makes this more interesting though as it
