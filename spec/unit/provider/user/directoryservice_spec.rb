@@ -3,13 +3,14 @@ require 'spec_helper'
 require 'facter/util/plist'
 
 describe Puppet::Type.type(:user).provider(:directoryservice) do
+  let(:username) { 'nonexistant_user' }
+  let(:user_path) { "/Users/#{username}" }
   let(:resource) do
     Puppet::Type.type(:user).new(
-      :name => 'nonexistant_user',
+      :name     => username,
       :provider => :directoryservice
     )
   end
-
   let(:provider) { resource.provider }
   let(:users_plist_dir) { '/var/db/dslocal/nodes/Default/users' }
 
@@ -22,11 +23,11 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     <dict>
             <key>dsAttrTypeStandard:NFSHomeDirectory</key>
             <array>
-            <string>/Users/testuser</string>
+            <string>/Users/nonexistant_user</string>
             </array>
             <key>dsAttrTypeStandard:RealName</key>
             <array>
-            <string>testuser</string>
+            <string>nonexistant_user</string>
             </array>
             <key>dsAttrTypeStandard:PrimaryGroupID</key>
             <array>
@@ -38,7 +39,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
             </array>
             <key>dsAttrTypeStandard:RecordName</key>
             <array>
-            <string>testuser</string>
+            <string>nonexistant_user</string>
             </array>
     </dict>
     </plist>'
@@ -48,11 +49,11 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
   # of XML
   let(:user_plist_hash) do
     {
-      "dsAttrTypeStandard:RealName"         => ["testuser"],
-      "dsAttrTypeStandard:NFSHomeDirectory" => ["/Users/testuser"],
+      "dsAttrTypeStandard:RealName"         => [username],
+      "dsAttrTypeStandard:NFSHomeDirectory" => [user_path],
       "dsAttrTypeStandard:PrimaryGroupID"   => ["22"],
       "dsAttrTypeStandard:UniqueID"         => ["1000"],
-      "dsAttrTypeStandard:RecordName"       => ["testuser"]
+      "dsAttrTypeStandard:RecordName"       => [username]
     }
   end
 
@@ -181,7 +182,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
             </array>
             <key>dsAttrTypeStandard:NFSHomeDirectory</key>
             <array>
-              <string>/Users/testuser</string>
+              <string>/Users/nonexistant_user</string>
             </array>
             <key>dsAttrTypeStandard:Password</key>
             <array>
@@ -211,11 +212,11 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
             </array>
             <key>dsAttrTypeStandard:RealName</key>
             <array>
-              <string>testuser</string>
+              <string>nonexistant_user</string>
             </array>
             <key>dsAttrTypeStandard:RecordName</key>
             <array>
-              <string>testuser</string>
+              <string>nonexistant_user</string>
             </array>
             <key>dsAttrTypeStandard:RecordType</key>
             <array>
@@ -243,12 +244,12 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     [{
       'dsAttrTypeStandard:RecordName'      => ['testgroup'],
       'dsAttrTypeStandard:GroupMembership' => [
-                                                'testuser',
+                                                username,
                                                 'jeff',
                                                 'zack'
                                               ],
       'dsAttrTypeStandard:GroupMembers'    => [
-                                                'guidnonexistant_user',
+                                                "guid#{username}",
                                                 'guidtestuser',
                                                 'guidjeff',
                                                 'guidzack'
@@ -261,7 +262,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
                                                 'zack'
                                               ],
       'dsAttrTypeStandard:GroupMembers'    => [
-                                                'guidtestuser',
+                                                "guid#{username}",
                                                 'guidjeff',
                                                 'guidzack'
                                               ],
@@ -269,12 +270,12 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     {
       'dsAttrTypeStandard:RecordName'      => ['third'],
       'dsAttrTypeStandard:GroupMembership' => [
-                                                'testuser',
+                                                username,
                                                 'jeff',
                                                 'zack'
                                               ],
       'dsAttrTypeStandard:GroupMembers'    => [
-                                                'guidnonexistant_user',
+                                                "guid#{username}",
                                                 'guidtestuser',
                                                 'guidjeff',
                                                 'guidzack'
@@ -282,9 +283,10 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     }]
   end
 
-  describe '#create with defaults' do
-    # The below hash contains the default values the provider will use
-    # if a value is not passed in a resource declaration.
+
+  describe 'Creating a user that does not exist' do
+    # These are the defaults that the provider will use if a user does
+    # not provide a value
     let(:defaults) do
       {
         'UniqueID'         => '1000',
@@ -296,40 +298,37 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     end
 
     before :each do
-      #provider.expects(:dscl).with('.', '-create', "/Users/#{resource[:name]}").returns true
-      #provider.expects(:next_system_id).returns(defaults['UniqueID'])
-      #defaults.each do |key,val|
-      #  provider.expects(:dscl).with('.', '-merge', "/Users/#{resource[:name]}", key, val)
-      #end
+      # Stub out all calls to dscl with default values from above
+      defaults.each do |key, val|
+        provider.expects(:merge_attribute_with_dscl).with('Users', username, key, val)
+      end
+
+      # Mock the rest of the dscl calls. We can't assume that our Linux
+      # build system will have the dscl binary
+      provider.expects(:create_new_user).with(username)
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'GeneratedUID').returns({'dsAttrTypeStandard:GeneratedUID' => ['GUID']})
+      provider.expects(:next_system_id).returns('1000')
     end
 
-    let(:resource_with_groups) do
-      Puppet::Type.type(:user).new(
-        :name     => 'nonexistant_user',
-        :provider => :directoryservice,
-        :groups   => 'groups'
-      )
-    end
-
-    it 'should create a user with defaults given a minimal declaration' do
+    it 'should not raise any errors when creating a user with default values' do
       provider.create
     end
 
-    # TODO: This is most likely NOT the way to do this.
-    it 'should call #password= if a password attribute is specified' do
-      resource[:password] = 'somepass'
-      provider.expects(:password=).with('somepass')
-      provider.create
+    %w{password iterations salt}.each do |value|
+      it "should call ##{value}= if a #{value} attribute is specified" do
+        resource[value.intern] = 'somevalue'
+        setter = (value << '=').intern
+        provider.expects(setter).with('somevalue')
+        provider.create
+      end
     end
 
-    it 'should call #iterations= if an iterations attribute is specified'
-    it 'should call #salt= if an iterations attribute is specified'
-
-    #it 'should call #groups= if a groups attribute is specified' do
-    #  resource[:groups] = 'groups'
-    #  provider.expects(:groups=).with('some,groups')
-    #  provider.create
-    #end
+    it 'should merge the GroupMembership and GroupMembers dscl values if a groups attribute is specified' do
+      resource[:groups] = 'somegroup'
+      provider.expects(:merge_attribute_with_dscl).with('Groups', 'somegroup', 'GroupMembership', username)
+      provider.expects(:merge_attribute_with_dscl).with('Groups', 'somegroup', 'GroupMembers', 'GUID')
+      provider.create
+    end
   end
 
   describe 'self#instances' do
@@ -369,19 +368,19 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
         :ensure         => :present,
         :provider       => :directoryservice,
         :groups         => 'testgroup,third',
-        :comment        => 'testuser',
+        :comment        => username,
         :password       => sha512_password_hash,
         :shadowhashdata => sha512_shadowhashdata_hash,
-        :name           => 'testuser',
+        :name           => username,
         :uid            => 1000,
         :gid            => 22,
-        :home           => '/Users/testuser'
+        :home           => user_path
       }
     end
 
     before :each do
       provider.class.expects(:dscl).with('-plist', '.', 'readall', '/Users').returns(testuser_plist)
-      provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser', 'ShadowHashData').returns(sha512_shadowhashdata_hash).twice
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'ShadowHashData').returns(sha512_shadowhashdata_hash).twice
       provider.class.expects(:get_list_of_groups).returns(group_plist_hash_guid).twice
       provider.class.prefetch({})
     end
@@ -403,19 +402,19 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     # This test expects an error to be raised
     # I'm PROBABLY doing this wrong...
     it 'should return false if the dscl command errors out' do
-      provider.expects(:dscl).with('.', 'read', '/Users/nonexistant_user').raises(Puppet::ExecutionFailure, 'Dscl Fails')
+      provider.expects(:dscl).with('.', 'read', user_path).raises(Puppet::ExecutionFailure, 'Dscl Fails')
       provider.exists?.should == false
     end
 
     it 'should return true if the dscl command does not error' do
-      provider.expects(:dscl).with('.', 'read', "/Users/#{resource[:name]}").returns(user_plist_xml)
+      provider.expects(:dscl).with('.', 'read', user_path).returns(user_plist_xml)
       provider.exists?.should == true
     end
   end
 
   describe '#delete' do
     it 'should call dscl when destroying/deleting a resource' do
-      provider.expects(:dscl).with('.', '-delete', "/Users/#{resource[:name]}")
+      provider.expects(:dscl).with('.', '-delete', user_path)
       provider.delete
     end
   end
@@ -429,7 +428,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
         'dsAttrTypeStandard:RecordName'      => ['testgroup'],
         'dsAttrTypeStandard:GroupMembership' => [
                                                   'testuser',
-                                                  'nonexistant_user',
+                                                  username,
                                                   'jeff',
                                                   'zack'
                                                 ],
@@ -442,7 +441,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
       {
         'dsAttrTypeStandard:RecordName'      => ['second'],
         'dsAttrTypeStandard:GroupMembership' => [
-                                                  'nonexistant_user',
+                                                  username,
                                                   'testuser',
                                                   'jeff',
                                                 ],
@@ -467,7 +466,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
 
     before :each do
       provider.class.expects(:dscl).with('-plist', '.', 'readall', '/Users').returns(testuser_plist)
-      provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser', 'ShadowHashData').returns([])
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'ShadowHashData').returns([])
     end
 
     it "should return a list of groups if the user's name matches GroupMembership" do
@@ -499,7 +498,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
         'dsAttrTypeStandard:GroupMembership' => [
                                                   'jeff',
                                                   'zack',
-                                                  'testuser'
+                                                  username
                                                 ],
         'dsAttrTypeStandard:GroupMembers'    => [
                                                   'guidjeff',
@@ -511,7 +510,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
         'dsAttrTypeStandard:GroupMembership' => [
                                                   'jeff',
                                                   'zack',
-                                                  'testuser'
+                                                  username
                                                 ],
         'dsAttrTypeStandard:GroupMembers'    => [
                                                   'guidjeff',
@@ -526,7 +525,8 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     end
 
     it 'should call dscl to add necessary groups' do
-      provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser', 'ShadowHashData').returns([])
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'ShadowHashData').returns([])
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'GeneratedUID').returns({'dsAttrTypeStandard:GeneratedUID' => ['guidnonexistant_user']})
       provider.expects(:groups).returns('two,three')
       provider.expects(:dscl).with('.', '-merge', '/Groups/one', 'GroupMembership', 'nonexistant_user')
       provider.expects(:dscl).with('.', '-merge', '/Groups/one', 'GroupMembers', 'guidnonexistant_user')
@@ -538,7 +538,7 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     ['10.5', '10.6'].each do |os_ver|
       it "should call the get_sha1 method on #{os_ver}" do
         Facter.expects(:value).with(:macosx_productversion_major).returns(os_ver)
-        provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser', 'ShadowHashData').returns([])
+        provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'ShadowHashData').returns([])
         provider.class.expects(:get_sha1).with('0A7D5B63-3AD4-4CA7-B03E-85876F1D1FB3').returns('password')
         provider.class.prefetch({}).first.password.should == 'password'
       end
@@ -546,13 +546,13 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
 
     it 'should call the get_salted_sha512 method on 10.7 and return the correct hash' do
       Facter.expects(:value).with(:macosx_productversion_major).returns('10.7')
-      provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser', 'ShadowHashData').returns(sha512_shadowhashdata_hash)
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'ShadowHashData').returns(sha512_shadowhashdata_hash)
       provider.class.prefetch({}).first.password.should == sha512_password_hash
     end
 
     it 'should call the get_salted_sha512_pbkdf2 method on 10.8 and return the correct hash' do
       Facter.expects(:value).with(:macosx_productversion_major).returns('10.8')
-      provider.class.expects(:get_attribute_from_dscl).with('Users', 'testuser','ShadowHashData').returns(pbkdf2_shadowhashdata_hash)
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username,'ShadowHashData').returns(pbkdf2_shadowhashdata_hash)
       provider.class.prefetch({}).first.password.should == pbkdf2_password_hash
     end
 
@@ -676,8 +676,8 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
     end
 
     it 'should return a hash containing a user\'s dscl attribute data' do
-      provider.class.expects(:dscl).with('-plist', '.', 'read', '/Users/testuser', 'GeneratedUID').returns(user_guid_xml)
-      provider.class.get_attribute_from_dscl('Users', 'testuser', 'GeneratedUID').should == user_guid_hash
+      provider.class.expects(:dscl).with('-plist', '.', 'read', user_path, 'GeneratedUID').returns(user_guid_xml)
+      provider.class.get_attribute_from_dscl('Users', username, 'GeneratedUID').should == user_guid_hash
     end
   end
 
@@ -942,29 +942,31 @@ describe Puppet::Type.type(:user).provider(:directoryservice) do
 
   describe '#write_sha1_hash' do
     let(:password_hash_dir) { '/var/db/shadow/hash' }
-    let(:stub_file) { stub('connection') }
 
     it "should write the sha1 hash to a file on disk named after the user's GUID and also ensure that ':ShadowHash;' is included in the user's AuthenticationAuthority" do
-      provider.expects(:get_attribute_from_dscl).with('Users', 'GeneratedUID').returns(['GUID'])
-      File.expects(:open).with("#{password_hash_dir}/GUID", 'w').yields(stub_file)
-      stub_file.expects(:write).with('sha1_password')
-      provider.expects(:dscl).with('.', '-merge', '/Users/nonexistant_user', 'AuthenticationAuthority', ';ShadowHash;').returns(true)
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'GeneratedUID').returns({'dsAttrTypeStandard:GeneratedUID' => ['GUID']})
+      provider.expects(:write_to_file).with("#{password_hash_dir}/GUID", 'sha1_password')
+      provider.expects(:dscl).with('.', '-merge', user_path, 'AuthenticationAuthority', ';ShadowHash;').returns(true)
       provider.write_sha1_hash('sha1_password')
     end
 
     it "should raise an error if Puppet cannot write to the file in /var/db/shadow/hash named after the user's GUID" do
-      provider.expects(:get_attribute_from_dscl).with('Users', 'GeneratedUID').returns(['GUID'])
-      File.expects(:open).with("#{password_hash_dir}/GUID", 'w').yields(stub_file)
-      stub_file.expects(:write).raises(Errno::EACCES, 'boom')
-      expect { provider.write_sha1_hash('sha1_password') }.to raise_error Puppet::Error, /Could not write to password hash file: Permission denied - boom/
+      File.expects(:open).with('filename', 'w').raises(Errno::EACCES, 'boom')
+      expect { provider.write_to_file('filename', 'sha1_password') }.to raise_error Puppet::Error, /Could not write to file filename: Permission denied - boom/
     end
 
     it "should raise an error if dscl cannot merge ';ShadowHash;' into the user's AuthenticationAuthority" do
-      provider.expects(:get_attribute_from_dscl).with('Users', 'GeneratedUID').returns(['GUID'])
-      File.expects(:open).with("#{password_hash_dir}/GUID", 'w').yields(stub_file)
-      stub_file.expects(:write).with('sha1_password')
-      provider.expects(:dscl).with('.', '-merge', '/Users/nonexistant_user', 'AuthenticationAuthority', ';ShadowHash;').raises(Puppet::ExecutionFailure, 'boom')
-      expect { provider.write_sha1_hash('sha1_password') }.to raise_error Puppet::Error, /Could not set AuthenticationAuthority to ;ShadowHash;/
+      provider.class.expects(:get_attribute_from_dscl).with('Users', username, 'GeneratedUID').returns({'dsAttrTypeStandard:GeneratedUID' => ['GUID']})
+      provider.expects(:write_to_file).with("#{password_hash_dir}/GUID", 'sha1_password')
+      provider.expects(:dscl).with('.', '-merge', user_path, 'AuthenticationAuthority', ';ShadowHash;').raises(Puppet::ExecutionFailure, 'boom')
+      expect { provider.write_sha1_hash('sha1_password') }.to raise_error Puppet::Error, /Could not set the dscl AuthenticationAuthority key with value: ;ShadowHash;/
+    end
+  end
+
+  describe '#merge_attribute_with_dscl' do
+    it 'should raise an error if a dscl command raises an error' do
+      provider.expects(:dscl).with('.', '-merge', user_path, 'GeneratedUID', 'GUID').raises(Puppet::ExecutionFailure, 'boom')
+      expect { provider.merge_attribute_with_dscl('Users', username, 'GeneratedUID', 'GUID') }.to raise_error Puppet::Error, /Could not set the dscl GeneratedUID key with value: GUID/
     end
   end
 end
