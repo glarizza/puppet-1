@@ -1,15 +1,5 @@
-## TODO LIST ##
-#1. Tests
-#2. The password property is the ONLY property to NOT use dscl when setting
-#    its value (no sane way without passing cleartext password). Because of
-#    this, we need to flush the dscl cache after setting the pw property (or
-#    else a second run is needed to actually CHANGE the value).
-#3. Make sure gid doesn't show up in groups - even with changes
-#4. Setting a gid based on name versus GID
-
 require 'puppet'
 require 'facter/util/plist'
-require 'pp'
 require 'base64'
 
 Puppet::Type.type(:user).provide :directoryservice do
