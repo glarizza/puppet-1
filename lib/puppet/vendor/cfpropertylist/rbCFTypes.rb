@@ -10,6 +10,16 @@
 require 'base64'
 
 module Puppet::Vendor::CFPropertyList
+  ##
+  # Blob is intended to distinguish between a Ruby String instance that should
+  # be converted to a CFString type and a Ruby String instance that should be
+  # converted to a CFData type.
+  class Blob < String
+    def blob?
+      true
+    end
+  end
+
   # This class defines the base class for all CFType classes
   #
   class CFType
@@ -163,7 +173,6 @@ module Puppet::Vendor::CFPropertyList
     def initialize(value=nil,format=DATA_BASE64)
       if(format == DATA_RAW)
         @raw_value = value
-        @raw_value.blob = true
       else
         @value = value
       end
@@ -177,8 +186,6 @@ module Puppet::Vendor::CFPropertyList
     # get base64 decoded value
     def decoded_value
       @raw_value ||= String.new(Base64.decode64(@value))
-      @raw_value.blob = true
-      @raw_value
     end
 
     # convert to XML
