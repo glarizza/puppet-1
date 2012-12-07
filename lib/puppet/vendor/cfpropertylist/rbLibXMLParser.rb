@@ -2,7 +2,7 @@
 
 require 'libxml'
 
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   # XML parser
   class LibXMLParser < XMLParserInterface
     # read a XML file

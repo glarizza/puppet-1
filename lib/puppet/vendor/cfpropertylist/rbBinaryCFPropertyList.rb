@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   # Binary PList parser class
   class Binary
     # Read a binary plist file

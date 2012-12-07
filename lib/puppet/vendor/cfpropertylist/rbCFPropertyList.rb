@@ -42,7 +42,7 @@ require 'time'
 # Author::    Christian Kruse (mailto:cjk@wwwtech.de)
 # Copyright:: Copyright (c) 2010
 # License::   MIT License
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   class << self
     attr_accessor :xml_parser_interface
   end
@@ -113,7 +113,7 @@ begin
   require dirname + '/rbLibXMLParser.rb'
   temp = LibXML::XML::Parser::Options::NOBLANKS; # check if we have a version with parser options
   try_nokogiri = false
-  CFPropertyList.xml_parser_interface = CFPropertyList::LibXMLParser
+  Puppet::Vendor::CFPropertyList.xml_parser_interface = Puppet::Vendor::CFPropertyList::LibXMLParser
 rescue LoadError, NameError
   try_nokogiri = true
 end
@@ -121,15 +121,15 @@ end
 if try_nokogiri then
   begin
     require dirname + '/rbNokogiriParser.rb'
-    CFPropertyList.xml_parser_interface = CFPropertyList::NokogiriXMLParser
+    Puppet::Vendor::CFPropertyList.xml_parser_interface = Puppet::Vendor::CFPropertyList::NokogiriXMLParser
   rescue LoadError => e
     require dirname + '/rbREXMLParser.rb'
-    CFPropertyList.xml_parser_interface = CFPropertyList::ReXMLParser
+    Puppet::Vendor::CFPropertyList.xml_parser_interface = Puppet::Vendor::CFPropertyList::ReXMLParser
   end
 end
 
 
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   # Create CFType hierarchy by guessing the correct CFType, e.g.
   #
   #  x = {
@@ -156,7 +156,7 @@ module CFPropertyList
     when Array, Enumerator, Enumerable::Enumerator
       ary = Array.new
       object.each do |o|
-        ary.push CFPropertyList.guess(o, options)
+        ary.push Puppet::Vendor::CFPropertyList.guess(o, options)
       end
       CFArray.new(ary)
 
@@ -164,7 +164,7 @@ module CFPropertyList
       hsh = Hash.new
       object.each_pair do |k,v|
         k = k.to_s if k.is_a?(Symbol)
-        hsh[k] = CFPropertyList.guess(v, options)
+        hsh[k] = Puppet::Vendor::CFPropertyList.guess(v, options)
       end
       CFDictionary.new(hsh)
     else
@@ -175,9 +175,9 @@ module CFPropertyList
         CFData.new(object.read(), CFData::DATA_RAW)
       when options[:converter_method] && object.respond_to?(options[:converter_method])
         if options[:converter_with_opts]
-          CFPropertyList.guess(object.send(options[:converter_method],options),options)
+          Puppet::Vendor::CFPropertyList.guess(object.send(options[:converter_method],options),options)
         else
-          CFPropertyList.guess(object.send(options[:converter_method]),options)
+          Puppet::Vendor::CFPropertyList.guess(object.send(options[:converter_method]),options)
         end
       when options[:convert_unknown_to_string]
         CFString.new(object.to_s)
@@ -199,7 +199,7 @@ module CFPropertyList
       ary = []
       object.value.each do
         |v|
-        ary.push CFPropertyList.native_types(v)
+        ary.push Puppet::Vendor::CFPropertyList.native_types(v)
       end
 
       return ary
@@ -208,7 +208,7 @@ module CFPropertyList
       object.value.each_pair do
         |k,v|
         k = k.to_sym if keys_as_symbols
-        hsh[k] = CFPropertyList.native_types(v)
+        hsh[k] = Puppet::Vendor::CFPropertyList.native_types(v)
       end
 
       return hsh
@@ -228,7 +228,7 @@ module CFPropertyList
     # Format constant for automatic format recognizing
     FORMAT_AUTO = 0
 
-    @@parsers = [Binary, CFPropertyList.xml_parser_interface]
+    @@parsers = [Binary, Puppet::Vendor::CFPropertyList.xml_parser_interface]
 
     # Path of PropertyList
     attr_accessor :filename
@@ -299,7 +299,7 @@ module CFPropertyList
           raise CFFormatError.new("Wong file version #{version}") unless version == "00"
           prsr = Binary.new
         else
-          prsr = CFPropertyList.xml_parser_interface.new
+          prsr = Puppet::Vendor::CFPropertyList.xml_parser_interface.new
         end
 
         @value = prsr.load({:data => str})
@@ -331,7 +331,7 @@ module CFPropertyList
           raise CFFormatError.new("Wong file version #{version}") unless version == "00"
           prsr = Binary.new
         else
-          prsr = CFPropertyList.xml_parser_interface.new
+          prsr = Puppet::Vendor::CFPropertyList.xml_parser_interface.new
         end
 
         @value = prsr.load({:file => file})
@@ -378,10 +378,10 @@ end
 class Array
   # convert an array to plist format
   def to_plist(options={})
-    options[:plist_format] ||= CFPropertyList::List::FORMAT_BINARY
+    options[:plist_format] ||= Puppet::Vendor::CFPropertyList::List::FORMAT_BINARY
 
-    plist = CFPropertyList::List.new
-    plist.value = CFPropertyList.guess(self, options)
+    plist = Puppet::Vendor::CFPropertyList::List.new
+    plist.value = Puppet::Vendor::CFPropertyList.guess(self, options)
     plist.to_str(options[:plist_format])
   end
 end
@@ -389,10 +389,10 @@ end
 class Enumerator
   # convert an array to plist format
   def to_plist(options={})
-    options[:plist_format] ||= CFPropertyList::List::FORMAT_BINARY
+    options[:plist_format] ||= Puppet::Vendor::CFPropertyList::List::FORMAT_BINARY
 
-    plist = CFPropertyList::List.new
-    plist.value = CFPropertyList.guess(self, options)
+    plist = Puppet::Vendor::CFPropertyList::List.new
+    plist.value = Puppet::Vendor::CFPropertyList.guess(self, options)
     plist.to_str(options[:plist_format])
   end
 end
@@ -400,10 +400,10 @@ end
 class Hash
   # convert a hash to plist format
   def to_plist(options={})
-    options[:plist_format] ||= CFPropertyList::List::FORMAT_BINARY
+    options[:plist_format] ||= Puppet::Vendor::CFPropertyList::List::FORMAT_BINARY
 
-    plist = CFPropertyList::List.new
-    plist.value = CFPropertyList.guess(self, options)
+    plist = Puppet::Vendor::CFPropertyList::List.new
+    plist.value = Puppet::Vendor::CFPropertyList.guess(self, options)
     plist.to_str(options[:plist_format])
   end
 end

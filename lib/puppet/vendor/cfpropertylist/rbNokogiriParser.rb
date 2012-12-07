@@ -2,7 +2,7 @@
 
 require 'nokogiri'
 
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   # XML parser
   class NokogiriXMLParser < ParserInterface
     # read a XML file

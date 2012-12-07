@@ -2,7 +2,7 @@
 
 require 'rexml/document'
 
-module CFPropertyList
+module Puppet::Vendor::CFPropertyList
   # XML parser
   class ReXMLParser < ParserInterface
     # read a XML file
