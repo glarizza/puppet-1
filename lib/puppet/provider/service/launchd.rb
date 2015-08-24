@@ -1,4 +1,4 @@
-require 'plist'
+require 'puppet/util/plist'
 Puppet::Type.type(:service).provide :launchd, :parent => :base do
   desc <<-'EOT'
     This provider manages jobs with `launchd`, which is the default service
@@ -50,6 +50,14 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
   has_feature :enableable
   has_feature :refreshable
   mk_resource_methods
+
+  def self.plistlib
+    Puppet::Util::Plist
+  end
+
+  def plistlib
+    self.class.plistlib
+  end
 
   # These are the paths in OS X where a launchd service plist could
   # exist. This is a helper method, versus a constant, for easy testing
@@ -120,7 +128,8 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     @label_to_path_map = {}
     launchd_paths.each do |path|
       return_globbed_list_of_file_paths(path).each do |filepath|
-        job = read_plist(filepath)
+        Puppet.debug("--------READING: #{filepath}")
+        job = plistlib.read_plist_file(filepath)
         next if job.nil?
         if job.has_key?("Label")
           @label_to_path_map[job["Label"]] = filepath
@@ -203,7 +212,7 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     job = self.class.jobsearch(label)
     job_path = job[label]
     if FileTest.file?(job_path)
-      job_plist = self.class.read_plist(job_path)
+      job_plist = plistlib.read_plist_file(job_path)
     else
       raise Puppet::Error.new("Unable to parse launchd plist at path: #{job_path}")
     end
@@ -275,7 +284,7 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
     job_path, job_plist = plist_from_label(resource[:name])
     job_plist_disabled = job_plist["Disabled"] if job_plist.has_key?("Disabled")
 
-    if FileTest.file?(self.class.launchd_overrides) and overrides = self.class.read_plist(self.class.launchd_overrides)
+    if FileTest.file?(self.class.launchd_overrides) and overrides = plistlib.read_plist_file(self.class.launchd_overrides)
       if overrides.has_key?(resource[:name])
         overrides_disabled = overrides[resource[:name]]["Disabled"] if overrides[resource[:name]].has_key?("Disabled")
       end
@@ -295,14 +304,14 @@ Puppet::Type.type(:service).provide :launchd, :parent => :base do
   # rather than dealing with launchctl as it is unable to change the Disabled flag
   # without actually loading/unloading the job.
   def enable
-    overrides = self.class.read_plist(self.class.launchd_overrides)
+    overrides = plistlib.read_plist_file(self.class.launchd_overrides)
     overrides[resource[:name]] = { "Disabled" => false }
-    Plist::Emit.save_plist(overrides, self.class.launchd_overrides)
+    plistlib.write_plist_file(overrides, self.class.launchd_overrides)
   end
 
   def disable
     job_path, job_plist = plist_from_label(resource[:name])
     job_plist["Disabled"] = true
-    Plist::Emit.save_plist(job_plist, job_path)
+    plistlib.write_plist_file(job_plist, job_path)
   end
 end
