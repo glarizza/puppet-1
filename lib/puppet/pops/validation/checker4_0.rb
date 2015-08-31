@@ -32,7 +32,7 @@ class Puppet::Pops::Validation::Checker4_0
     @acceptor = diagnostics_producer
 
     # Use null migration checker unless given in context
-    @migration_checker = (Puppet.lookup(:migration_checker) { Puppet::Pops::Migration::MigrationChecker.new() })
+    @migration_checker ||= (Puppet.lookup(:migration_checker) { Puppet::Pops::Migration::MigrationChecker.new() })
   end
 
   # Validates the entire model by visiting each model element and calling `check`.
@@ -52,8 +52,8 @@ class Puppet::Pops::Validation::Checker4_0
 
   # Performs check if this is a vaid hostname expression
   # @param single_feature_name [String, nil] the name of a single valued hostname feature of the value's container. e.g. 'parent'
-  def hostname(o, semantic)
-    @@hostname_visitor.visit_this_1(self, o, semantic)
+  def hostname(o, semantic, single_feature_name = nil)
+    @@hostname_visitor.visit_this_2(self, o, semantic, single_feature_name)
   end
 
   # Performs check if this is valid as a query
@@ -115,9 +115,9 @@ class Puppet::Pops::Validation::Checker4_0
         acceptor.accept(Issues::CROSS_SCOPE_ASSIGNMENT, o, :name => varname_string)
       end
     end
-
     # TODO: Could scan for reassignment of the same variable if done earlier in the same container
     #       Or if assigning to a parameter (more work).
+    # TODO: Investigate if there are invalid cases for += assignment
   end
 
   def assign_AccessExpression(o, via_index)
@@ -128,10 +128,6 @@ class Puppet::Pops::Validation::Checker4_0
       # Then the left expression must be assignable-via-index
       assign(o.left_expr, true)
     end
-  end
-
-  def assign_LiteralList(o, via_index)
-    o.values.each {|x| assign(x) }
   end
 
   def assign_Object(o, via_index)
@@ -218,6 +214,7 @@ class Puppet::Pops::Validation::Checker4_0
         break # only flag the first
       end
     end
+    migration_checker.report_array_last_in_block(o.statements[-1])
   end
 
   def check_CallNamedFunctionExpression(o)
@@ -299,6 +296,12 @@ class Puppet::Pops::Validation::Checker4_0
     'runtime' => true,
   }
 
+  FUTURE_RESERVED_WORDS = {
+    'application' => true,
+    'produces' => true,
+    'consumes' => true
+  }
+
   # for 'class', 'define', and function
   def check_NamedDefinition(o)
     top(o.eContainer, o)
@@ -309,34 +312,28 @@ class Puppet::Pops::Validation::Checker4_0
     if RESERVED_TYPE_NAMES[o.name()]
       acceptor.accept(Issues::RESERVED_TYPE_NAME, o, {:name => o.name})
     end
-  end
 
-  def check_FunctionDefinition(o)
-    # TODO PUP-2080: more strict rule for top - can only be contained in Program (for now)
-    #  sticking functions in classes would create functions in the class name space
-    #  but not be special in any other way
-    #
-    check_NamedDefinition(o)
+    # This is perhaps not ideal but it's very difficult to pass a ReservedWord through
+    # the mechanism that creates qualified names (namestack, namepop etc.)
+    if FUTURE_RESERVED_WORDS[o.name]
+      acceptor.accept(Issues::FUTURE_RESERVED_WORD, o, {:word => o.name})
+    end
+
+    if violator = ends_with_idem(o.body)
+      acceptor.accept(Issues::IDEM_NOT_ALLOWED_LAST, violator, {:container => o})
+    end
   end
 
   def check_HostClassDefinition(o)
     check_NamedDefinition(o)
     internal_check_no_capture(o)
     internal_check_reserved_params(o)
-    internal_check_no_idem_last(o)
   end
 
   def check_ResourceTypeDefinition(o)
     check_NamedDefinition(o)
     internal_check_no_capture(o)
     internal_check_reserved_params(o)
-    internal_check_no_idem_last(o)
-  end
-
-  def internal_check_no_idem_last(o)
-    if violator = ends_with_idem(o.body)
-      acceptor.accept(Issues::IDEM_NOT_ALLOWED_LAST, violator, {:container => o})
-    end
   end
 
   def internal_check_capture_last(o)
@@ -388,9 +385,18 @@ class Puppet::Pops::Validation::Checker4_0
     o.values.each {|v| rvalue(v) }
   end
 
+  def check_LiteralFloat(o)
+    migration_checker.report_ambiguous_float(o)
+  end
+
+  def check_LiteralInteger(o)
+    migration_checker.report_ambiguous_integer(o)
+  end
+
   def check_NodeDefinition(o)
     # Check that hostnames are valid hostnames (or regular expressions)
     hostname(o.host_matches, o)
+    hostname(o.parent, o, 'parent') unless o.parent.nil?
     top(o.eContainer, o)
     if violator = ends_with_idem(o.body)
       acceptor.accept(Issues::IDEM_NOT_ALLOWED_LAST, violator, {:container => o})
@@ -436,15 +442,6 @@ class Puppet::Pops::Validation::Checker4_0
 
     unless o.name =~ Puppet::Pops::Patterns::PARAM_NAME
       acceptor.accept(Issues::ILLEGAL_PARAM_NAME, o, :name => o.name)
-    end
-    return unless o.value
-
-    if o.value.is_a?(Puppet::Pops::Model::AssignmentExpression)
-      [o.value]
-    else
-      o.value.eAllContents.select {|model| model.is_a? Puppet::Pops::Model::AssignmentExpression }
-    end.each do |assignment|
-      acceptor.accept(Issues::ILLEGAL_ASSIGNMENT_CONTEXT, assignment)
     end
   end
 
@@ -544,11 +541,14 @@ class Puppet::Pops::Validation::Checker4_0
   #--- HOSTNAME CHECKS
 
   # Transforms Array of host matching expressions into a (Ruby) array of AST::HostName
-  def hostname_Array(o, semantic)
-    o.each {|x| hostname(x, semantic) }
+  def hostname_Array(o, semantic, single_feature_name)
+    if single_feature_name
+      acceptor.accept(Issues::ILLEGAL_EXPRESSION, o, {:feature=>single_feature_name, :container=>semantic})
+    end
+    o.each {|x| hostname(x, semantic, false) }
   end
 
-  def hostname_String(o, semantic)
+  def hostname_String(o, semantic, single_feature_name)
     # The 3.x checker only checks for illegal characters - if matching /[^-\w.]/ the name is invalid,
     # but this allows pathological names like "a..b......c", "----"
     # TODO: Investigate if more illegal hostnames should be flagged.
@@ -558,11 +558,11 @@ class Puppet::Pops::Validation::Checker4_0
     end
   end
 
-  def hostname_LiteralValue(o, semantic)
-    hostname_String(o.value.to_s, o)
+  def hostname_LiteralValue(o, semantic, single_feature_name)
+    hostname_String(o.value.to_s, o, single_feature_name)
   end
 
-  def hostname_ConcatenatedString(o, semantic)
+  def hostname_ConcatenatedString(o, semantic, single_feature_name)
     # Puppet 3.1. only accepts a concatenated string without interpolated expressions
     if the_expr = o.segments.index {|s| s.is_a?(Model::TextExpression) }
       acceptor.accept(Issues::ILLEGAL_HOSTNAME_INTERPOLATION, o.segments[the_expr].expr)
@@ -572,32 +572,32 @@ class Puppet::Pops::Validation::Checker4_0
     else
       # corner case, may be ok, but lexer may have replaced with plain string, this is
       # here if it does not
-      hostname_String(o.segments[0], o.segments[0])
+      hostname_String(o.segments[0], o.segments[0], false)
     end
   end
 
-  def hostname_QualifiedName(o, semantic)
-    hostname_String(o.value.to_s, o)
+  def hostname_QualifiedName(o, semantic, single_feature_name)
+    hostname_String(o.value.to_s, o, single_feature_name)
   end
 
-  def hostname_QualifiedReference(o, semantic)
-    hostname_String(o.value.to_s, o)
+  def hostname_QualifiedReference(o, semantic, single_feature_name)
+    hostname_String(o.value.to_s, o, single_feature_name)
   end
 
-  def hostname_LiteralNumber(o, semantic)
+  def hostname_LiteralNumber(o, semantic, single_feature_name)
     # always ok
   end
 
-  def hostname_LiteralDefault(o, semantic)
+  def hostname_LiteralDefault(o, semantic, single_feature_name)
     # always ok
   end
 
-  def hostname_LiteralRegularExpression(o, semantic)
+  def hostname_LiteralRegularExpression(o, semantic, single_feature_name)
     # always ok
   end
 
-  def hostname_Object(o, semantic)
-    acceptor.accept(Issues::ILLEGAL_EXPRESSION, o, {:feature => 'hostname', :container => semantic})
+  def hostname_Object(o, semantic, single_feature_name)
+    acceptor.accept(Issues::ILLEGAL_EXPRESSION, o, {:feature=> single_feature_name || 'hostname', :container=>semantic})
   end
 
   #---QUERY CHECKS
