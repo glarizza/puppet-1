@@ -13,8 +13,9 @@ module Puppet::Util::Plist
 
     # Defines a default doctype string that should be at the top of most plist
     # files. Useful if we need to modify an invalid doctype string in memory.
-    # I'm looking at you, /System/Library/LaunchDaemons/org.ntp.ntpd.plist,
-    # you bastard.
+    # In version 10.9 and lower of OS X the plist at
+    # /System/Library/LaunchDaemons/org.ntp.ntpd.plist had an invalid doctype
+    # string. This corrects for that.
     def plist_xml_doctype
       '<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
     end
@@ -25,7 +26,7 @@ module Puppet::Util::Plist
       bad_xml_doctype = /^.*<!DOCTYPE plist PUBLIC -\/\/Apple Computer.*$/
       # We can't really read the file until we know the source encoding in
       # Ruby 1.9.x, so we use the magic number to detect it.
-      # NOTE: We need to use IO.read to be Ruby 1.8.x compatible.
+      # NOTE: We used IO.read originally to be Ruby 1.8.x compatible.
       if IO.read(file_path, binary_plist_magic_number.length) == binary_plist_magic_number
         plist_obj = CFPropertyList::List.new(:file => file_path)
       else
@@ -35,17 +36,7 @@ module Puppet::Util::Plist
           Puppet.debug("Had to fix plist with incorrect DOCTYPE declaration: #{file_path}")
         end
         begin
-          # This is fucking terrible - I'm redirecting $stderr because I
-          # can't swallow an error bubbled up by libxml when the file
-          # /System/Library/LaunchDaemons/org.cups.cupsd.plist tries to
-          # be parsed. That file has invalid double hyphens within an XML
-          # comment, and even though the file passes `plutil -lint`, it's
-          # invalid XML. It's been that way for fucking ever and it sucks.
-          # I would REALLY appreciate a pull request to handle this better.
-          orig_stderr = $stderr.clone
-          $stderr.reopen('/dev/null', 'w+')
           plist_obj = CFPropertyList::List.new(:data => plist_data)
-          $stderr.reopen(orig_stderr)
         rescue CFFormatError, LibXML::XML::Error => e
           Puppet.debug "Failed with #{e.class} on #{file_path}: #{e.inspect}"
           return nil
